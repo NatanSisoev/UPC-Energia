@@ -2,7 +2,7 @@
 
 Assumptions (inferred from the challenge page; validate vs starter_kit/environment.py when available):
 - eta_one_way = sqrt(0.9). Charging p kW stores p*eta kWh; discharging p kW delivers p kW and removes p/eta kWh.
-- grid = load - pv + setpoint. Import (grid>0) costs price and emits co2*kWh. Export (grid<0) earns EXPORT_PRICE, no CO2 credit.
+- grid = load - pv + setpoint. Import (grid>0) costs price and emits co2*kWh. Export (grid<0) earns EXPORT_PRICE (0.0 in official environment.py), no CO2 credit.
 - Baseline "no battery" = same campus with setpoint 0.
 - Score = max(0, 0.7*dCO2% + 0.3*dCost% - VIOLATION_PENALTY*violations)  (percent units).
 - Violation = requested setpoint outside the feasible range that hour (|p|>500, charge > room/eta, discharge > soc*eta).
@@ -19,8 +19,8 @@ CAPACITY = 2000.0
 P_MAX = 500.0
 ETA = 0.9 ** 0.5
 SOC_INIT = 0.5 * CAPACITY
-EXPORT_PRICE = 0.04
-VIOLATION_PENALTY = 0.20   # page formula; FAQ says 1.00 -> keep configurable
+EXPORT_PRICE = 0.0       # official environment.py default (export_price=0.0)
+VIOLATION_PENALTY = 0.20   # official environment.py: 0.002 of score fraction = 0.2 points per infraction
 TOL = 1e-3
 
 

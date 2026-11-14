@@ -26,7 +26,7 @@ campus battery over **12 weeks of the year (2,016 hours)**. Objective weights:
 Grid power (kW) = campus demand − solar generation + battery setpoint
 setpoint > 0 : charging (draws energy);  setpoint < 0 : discharging (feeds campus)
 Grid > 0 : campus buys at PVPC price, emits CO2 per grid mix
-Grid < 0 : surplus solar exported at compensation price 0.04 €/kWh (page text) — charge the battery with it instead
+Grid < 0 : surplus exported; official `environment.py` uses export_price = 0.0 (page text mentions 0.04) — charge the battery with it instead
 ```
 
 Rule of thumb: cycling only pays if the expensive/dirty hour is ≥ 11.1 % (1/0.9) worse than the cheap/clean hour you charged in.
@@ -72,7 +72,7 @@ return float(np.clip(consigna, -max_descarrega, max_carrega))
 Score = max(0, 0.70·ΔCO2(%) + 0.30·ΔCost(%) − 0.20·Infractions)
 ```
 - ΔCO2 / ΔCost: % reduction vs. the **same campus without battery**.
-- Infraction: each hour with physical clipping / limit violation. **Page formula says −0.20 per infraction, the FAQ says −1.00** → unknown which; assume the worst and aim for **0 infractions**.
+- Infraction: each physical clipping / limit violation. **Sources disagree**: web page formula −0.20, FAQ and `docs/official/ENUNCIAT.md` −1.00, official `starter_kit/environment.py` 0.002 of the score fraction (= 0.2 points). Assume the worst and keep **0 infractions**.
 - Tie-break: higher score → fewer infractions → earlier registration time.
 - **Jury** weighs the final presentation (technical reasoning, data analysis, strategy justification) *decisively* — leaderboard is only a quantitative guide.
 
@@ -127,3 +127,11 @@ Test = 1,008 h public (leaderboard) + hidden private half used for the final ver
 OpenAI-compatible inference API at `https://api.helmcode.com/v1` (docs: https://helmcode.com/docs). The shared participant API key is distributed
 in the organisers' Discord/announcement - **never commit it**; keep it in env var `HELMCODE_API_KEY`.
 Models (plan-covered): `glm5.3-flash`, `deepseek-v4-flash`, `qwen3.6`, `gemma4`; `glm5.3` is a paid add-on; frontier Claude/GPT/Gemini ids need prepaid credit.
+
+## Verified against the official kit (`starter_kit/environment.py`, in `docs/official/` + git-ignored `starter_kit/`)
+
+- `export_price = 0.0`; baseline (no battery) grid = max(load − pv, 0); CO2 counted on grid import only.
+- Score in points = 100·(0.7·dCO2 + 0.3·dCost) − 0.2·infractions (a power clip and a capacity clip in the same hour count separately).
+- Future price/CO2 lists are **truncated** (not padded) at the end of a test block.
+- Our `sim/simulator.py` matches the official env (see `tests/test_vs_official.py`). Baseline heuristic on the full train set: **score ≈ 1.27**, so realistic scores are small numbers; improvements must be measured on whole weeks.
+- Hidden test: `data/test_hidden/`, last 7 days of each of 12 months = 2,016 h.
