@@ -218,3 +218,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Datathon ---
+data/*
+!data/README.md
+starter_kit/
+submission.zip
+*.pkl.bak
+.venv/
+docs/official/
