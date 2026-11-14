@@ -1,5 +1,15 @@
 # Frontend handoff — state at 2026-11-14 (end of session 2)
 
+## Session 3 (Aiman, branch `aiman-demo-minimal`): minimalist UPC-style redesign
+- **Look**: light institutional theme in the spirit of upc.edu (white, UPC blue `#007bc0`, thin rules, Helvetica/Arial). `index.css` rewritten; Nunito no longer loaded.
+- **Layout** (`App.tsx`): header (week picker, live figures, *Solar & storage* button) · map · clean week timeline at the bottom · assistant sidebar on the right.
+- **Map** (`scene/minimal.ts`, `components/MapView.tsx`): **2D by default**, 2D/3D switch. Buildings are heat-coloured by their current kW (log scale, OrRd ramp) with a soft glow and a floating kW tag on the 16 biggest consumers. Battery yard, cables, cars, trees, clouds, sun/sky removed. Layers are rebuilt only when hour / hover / selection / mode change (no 30 fps loop).
+- **Loading**: the old `buildWorld()` took ~2.7 s; `buildMinimal()` takes ~7 ms. Data load + three week simulations ≈ 0.5 s. The Insights worker pre-warm is no longer started.
+- **Timeline** (`TimeBar.tsx`): drag / click / arrow keys, click a day to jump to it, faint demand silhouette; one play/pause, no speed or weather buttons. The week starts paused.
+- **Assistant** (`components/Assistant.tsx`, `lib/assistant.ts`): *Suggested action* card (from the MPC setpoint + reason, next change, battery %) and a local, deterministic chat (EN/ES/CA keywords): now / prices / CO₂ / solar / top buildings / a named building / yesterday vs today / savings / peak / "show Friday at 9" (moves the timeline). Clicking a building asks about it. No LLM, no network.
+- **Catalog** (`components/Catalog.tsx`): drawer with solar panels and batteries from `data/catalogue.ts`; **Ask budget** opens a pre-filled email (`mailto:`). Recipient is `BUDGET_EMAIL` (empty = user picks it).
+- Not in the UI any more (code kept, still compiles): camera presets, tilt/rotate, sun control, layers menu, Campus/Solar/Battery/Impact tabs, Charts, Insights, guided pitch. `world.ts` is unused by the app now.
+
 ## Done (cumulative)
 - **Challenge-exact engine in the browser** (`src/sim/challenge.ts`): physics, clamp/infractions, score (`0.7·ΔCO₂% + 0.3·ΔCost% − 0.2·viol`, export = 0, imports only), 24 h MPC, template.
   `npm run validate` → max |setpoint diff| ~4e-13 kW on all 35 real weeks. Session 2 added **optional MPC knobs** (`MpcOptions`: `alphaCo2`, `betaCost`, `horizon`); defaults reproduce Python exactly (validate unchanged).

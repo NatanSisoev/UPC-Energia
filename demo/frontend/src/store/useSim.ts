@@ -67,6 +67,8 @@ interface SimStore {
   layers: Record<LayerId, boolean>;
   /** null = the sun follows the clock; a number freezes the sun at that local hour of day */
   sunLock: number | null;
+  /** map mode: flat 2D (default) or extruded 3D */
+  mode3d: boolean;
 
   snap: Snapshot | null;
   /** bumped when week / solar / battery / agent change (components re-read `derived`) */
@@ -83,6 +85,7 @@ interface SimStore {
   toggleLayer: (id: LayerId) => void;
   setLayers: (patch: Partial<Record<LayerId, boolean>>) => void;
   setSunLock: (h: number | null) => void;
+  setMode3d: (v: boolean) => void;
   select: (id: string | null) => void;
   setPanelModel: (id: PanelModelId) => void;
   setSolar: (id: string, patch: Partial<SolarCfg>) => void;
@@ -104,8 +107,8 @@ export const useSim = create<SimStore>((set, get) => ({
   replay: null,
   loadError: null,
   weekIdx: 17, // a spring week with a nice price/CO2 spread
-  tMin: 11 * 60,
-  playing: true,
+  tMin: 24 * 60 + 13 * 60, // day 2, 13:00: a busy weekday hour
+  playing: false,
   speed: 60,
   panelModel: 'mono',
   solar: {},
@@ -115,6 +118,7 @@ export const useSim = create<SimStore>((set, get) => ({
   underground: false,
   layers: { heat: false, people: false, weather: true, solar: true, cables: true, trees: true, shadows: true, labels: true },
   sunLock: null,
+  mode3d: false,
   snap: null,
   version: 0,
 
@@ -152,7 +156,7 @@ export const useSim = create<SimStore>((set, get) => ({
   setSpeed: (v) => set({ speed: v }),
   setTMin: (t) => set({ tMin: t, snap: derived.current ? snapshotAt(get(), t) : null }),
   setWeek: (i) => {
-    set({ weekIdx: i, tMin: 0 });
+    set({ weekIdx: i }); // keep the same position in the week
     recompute(set, get);
   },
   setAgent: (a) => {
@@ -166,6 +170,7 @@ export const useSim = create<SimStore>((set, get) => ({
     set({ sunLock: h });
     set({ snap: derived.current ? snapshotAt(get(), get().tMin) : null });
   },
+  setMode3d: (v) => set({ mode3d: v }),
   select: (id) => set({ selection: id }),
   setPanelModel: (id) => {
     set({ panelModel: id });
