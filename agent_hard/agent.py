@@ -163,6 +163,8 @@ class BatteryAgent:
         self.wmult_pow = float(model.get("wmult_pow", 1.0))
         self.rho = float(model.get("wmult_rho", 0.0))   # share of the price-error variance that persists over the horizon
         self.holidays = set(model.get("holidays", []))
+        self.co2_expand = float(model.get("co2_expand", 1.0))   # >1: forecasts are shrunk towards their mean, undo it
+        self.price_expand = float(model.get("price_expand", 1.0))
         self.co2_mult = float(model.get("co2_mult", 1.0))   # tilt of the planner's CO2 weight vs price
         self.calendar = bool(model.get("calendar", 0))  # published calendar (holidays, UPC closures) instead of the list
         self.spread_scale = float(model.get("spread_scale", 1.0))
@@ -203,6 +205,8 @@ class BatteryAgent:
         i, n, cal, known = self._observe(obs)
         price, co2, load, pv = self._forecast(i, n, cal, known)
         k_co2, k_cost = self._weights()
+        if self.co2_expand != 1.0 or self.price_expand != 1.0:           # sharpen the forecast spread (unpublished hours)
+            co2, price = self._sharpen(co2, known, self.co2_expand), self._sharpen(price, known, self.price_expand)
         w = k_co2 * self.co2_mult * co2 + k_cost * price                # co2_mult 1 = the score's own weights
         w = np.maximum(w / max(float(np.mean(np.abs(w))), 1e-300), 1e-9)       # only relative values matter
         atoms = (load - pv)[:, None] + self._spread(n, cal)
@@ -214,6 +218,14 @@ class BatteryAgent:
                 wmult = self.wmult[LEAD_BUCKET[:n]] ** self.wmult_pow
             wmult[:known] = 1.0                                        # the published hours are certain
         return self._plan(w, atoms, soc, cap, pmax, wmult)
+
+    @staticmethod
+    def _sharpen(x, known, s):
+        """Scales the deviation of the forecast from its horizon mean by s (published hours stay as they are)."""
+        m = float(np.mean(x))
+        y = np.maximum(m + s * (x - m), 0.0)
+        y[:known] = x[:known]
+        return y
 
     def _observe(self, obs):
         """Book-keeping of one step: clock, week boundaries, measurements. Returns (step, hours to plan, calendar of
