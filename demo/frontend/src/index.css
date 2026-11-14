@@ -1,0 +1,230 @@
+@import 'tailwindcss';
+
+/*
+ * UPC Campus Nord Energy Twin — "city-builder" game theme.
+ * Chunky rounded panels with a hard bottom shadow, saturated candy accents, Nunito display type.
+ */
+@theme {
+  --font-sans: 'Nunito Variable', 'Nunito', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Nunito Variable', 'Nunito', 'Segoe UI', system-ui, sans-serif;
+
+  --color-ink: #0e1530;
+  --color-card: #1a2547;
+  --color-card-2: #222f58;
+  --color-edge: #3a4a7c;
+  --color-cyan-pop: #3ee6ff;
+  --color-lime-pop: #a6ff5c;
+  --color-amber-pop: #ffc83d;
+  --color-rose-pop: #ff5f7e;
+  --color-violet-pop: #ab8cff;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #16203a;
+  color: #eaf0ff;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- chunky game surfaces ---------- */
+.panel {
+  position: relative;
+  background: linear-gradient(180deg, #243262 0%, #19234a 100%);
+  border: 2px solid var(--color-edge);
+  border-radius: 20px;
+  box-shadow:
+    0 5px 0 0 #0b1128,
+    0 14px 30px -10px rgb(4 8 24 / 0.7),
+    inset 0 2px 0 0 rgb(255 255 255 / 0.1);
+}
+.panel-flat {
+  background: rgb(10 16 42 / 0.55);
+  border: 1.5px solid rgb(120 140 210 / 0.22);
+  border-radius: 14px;
+}
+.panel-title {
+  font-weight: 900;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+.label-caps {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8da0d8;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 14px;
+  border: 2px solid rgb(255 255 255 / 0.14);
+  background: linear-gradient(180deg, #34457f 0%, #26346a 100%);
+  color: #eaf0ff;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 0 0 #0b1128;
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s,
+    filter 0.15s;
+  cursor: pointer;
+}
+.btn:hover {
+  filter: brightness(1.18);
+  transform: translateY(-1px);
+}
+.btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 0 #0b1128;
+}
+.btn-on {
+  background: linear-gradient(180deg, var(--accent, #3ee6ff) 0%, color-mix(in srgb, var(--accent, #3ee6ff) 70%, #000) 100%);
+  color: #08122e;
+  border-color: rgb(255 255 255 / 0.5);
+  box-shadow:
+    0 4px 0 0 color-mix(in srgb, var(--accent, #3ee6ff) 35%, #000),
+    0 0 18px -2px var(--accent, #3ee6ff);
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #1e2a55, #151f42);
+  border: 2px solid var(--edge, #3a4a7c);
+  box-shadow: 0 4px 0 0 #0b1128;
+}
+.pill-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  font-size: 16px;
+  color: #0b1128;
+  background: var(--c);
+  box-shadow:
+    inset 0 -3px 0 rgb(0 0 0 / 0.18),
+    0 0 14px -2px var(--c);
+}
+
+.tooltip-card {
+  background: rgb(14 20 46 / 0.96);
+  border: 2px solid #3a4a7c;
+  border-radius: 14px;
+  padding: 9px 12px;
+  box-shadow:
+    0 5px 0 #0b1128,
+    0 12px 28px -8px #000;
+  max-width: 280px;
+}
+
+/* ---------- inputs ---------- */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 24px;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid #0b1128;
+  background: linear-gradient(to right, currentColor var(--fill, 0%), #131b3a var(--fill, 0%));
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid currentColor;
+  box-shadow: 0 3px 0 #0b1128;
+}
+
+select.sel {
+  background: #131b3a;
+  color: #fff;
+  border: 2px solid #3a4a7c;
+  border-radius: 12px;
+  padding: 6px 10px;
+  font-weight: 800;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3a4a7c transparent;
+}
+
+/* ---------- motion ---------- */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pop-in {
+  animation: pop-in 0.35s cubic-bezier(0.2, 1.1, 0.3, 1) both;
+}
+@keyframes bolt {
+  0%,
+  100% {
+    transform: scale(1) rotate(-4deg);
+    filter: drop-shadow(0 0 10px #3ee6ff);
+  }
+  50% {
+    transform: scale(1.2) rotate(4deg);
+    filter: drop-shadow(0 0 26px #3ee6ff);
+  }
+}
+.loader-bolt {
+  font-size: 56px;
+  animation: bolt 1.1s ease-in-out infinite;
+}
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.floaty {
+  animation: floaty 2.4s ease-in-out infinite;
+}
+.recharts-default-tooltip {
+  background: rgb(14 20 46 / 0.96) !important;
+  border: 2px solid #3a4a7c !important;
+  border-radius: 12px !important;
+}
