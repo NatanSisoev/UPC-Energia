@@ -70,7 +70,9 @@ def clear_sky_basis(day_of_year, hour, summer_time, haze):
     for minute in (7.5, 22.5, 37.5, 52.5):
         e, n, u = sun_vector(day_of_year, hour + minute / 60.0, summer_time)
         t = np.where(u > 0.02, np.exp(-haze * (1.0 / np.maximum(u, 0.02) - 1.0)), 0.0)
-        out += 0.25 * np.stack([e * t, n * t, u * t])
+        out[0] += 0.25 * e * t
+        out[1] += 0.25 * n * t
+        out[2] += 0.25 * u * t
     return out
 
 
