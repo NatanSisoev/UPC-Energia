@@ -11,11 +11,32 @@ Goals: **1. best leaderboard score** (MODEL track) · **2. best demo/presentatio
 2. [WORKFLOW.md](WORKFLOW.md) — **mandatory** branch / merge / submission rules for the three of us and our agents.
 3. `docs/HANDOFF.md` — what teammates changed recently.
 
+## Setup — DO THIS YOURSELF at the start of a session (do not ask the human; they have pre-authorised these downloads)
+
+Everything below is allowed without asking: downloading the official kit from the challenge site and `pip install` of the libraries in `requirements.txt` (plus the branch extras). Check what is missing first, then install only that.
+
+```bash
+git fetch origin && git merge origin/main                # latest shared code
+python -m venv .venv                                       # once
+.venv/Scripts/python -m pip install -r requirements.txt    # Windows; on mac/linux: .venv/bin/python -m pip ...
+.venv/Scripts/python scripts/fetch_kit.py                  # downloads + installs the official ZIP (13 MB) if missing
+.venv/Scripts/python -m pytest -q                          # must be green
+.venv/Scripts/python -m sim.evaluate --weeks               # sanity check on the real data
+```
+
+`scripts/fetch_kit.py` puts `data/train/*.csv`, `starter_kit/*` and `docs/official/*` in place (all git-ignored; never commit them). If the default URL 403s/expires:
+open https://repteupc.datathon.cat/ -> tab "Dades del Campus i Starter Kit", click "Descarregar Paquet per als Participants (ZIP, 13 MB)" (the file URL is `/media/<hash>.zip`, visible in the browser network log), then run `scripts/fetch_kit.py --url <that url>` — or, if the human already put the ZIP in the repo root, `scripts/fetch_kit.py --zip paquet_participants_datathon_upc.zip`. The 5-minute-resolution CSVs total ~90 MB unzipped; that is expected.
+Extract downloads only into the git-ignored folders above, never into tracked folders; run any Python that reads downloaded files with `-I` when it is a throwaway script.
+
+Branch-specific extras (install/download only what your branch needs):
+- **`natan`** (optimizer): nothing beyond requirements (scipy's HiGHS LP is already included). Optionally `pip install cvxpy` / `ortools` for *experiments only* — they can never go into `agent/`.
+- **`aiman`** (forecasting): `lightgbm`, `xgboost`, `scikit-learn`, `joblib` (in requirements) plus, for notebooks only, `pip install jupyter matplotlib seaborn`. Models must stay loadable with the allowed libs; pin versions you trained with in `docs/HANDOFF.md`.
+- **`sami`** (demo): Node/npm or a plain static server (`python -m http.server`) — three.js and chart libs from a pinned CDN version during development, then **vendor them into `demo/vendor/`** (download the files, commit them) so the presentation works offline. `pip install streamlit plotly` only if the stack is Streamlit. Fonts/textures/3D assets: use freely-licensed or self-made ones and record the source in `demo/ASSETS.md`.
+
 ## Which branch am I on? Work ONLY there, and do YOUR assignment
 
 Run `git branch --show-current` first. Your branch = your human. Commit and push directly to it (`git push origin <branch>`); never commit to `main` or to someone else's branch.
-Start every session with `git fetch origin && git merge origin/main`, then read `PLAN.md` and `docs/HANDOFF.md`.
-First time on this machine: set up the venv, `pip install -r requirements.txt`, and get the data (see `data/README.md`: official ZIP -> `data/train/`, `starter_kit/`), then `pytest`.
+Start every session with the Setup block above, then read `PLAN.md` and `docs/HANDOFF.md`.
 
 ### Branch `natan` — MODEL track: optimizer
 Owner of `agent/agent.py` and `experiments/oracle/`, `experiments/rule_v2/`, `experiments/mpc/`.
