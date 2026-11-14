@@ -163,6 +163,7 @@ class BatteryAgent:
         self.wmult_pow = float(model.get("wmult_pow", 1.0))
         self.rho = float(model.get("wmult_rho", 0.0))   # share of the price-error variance that persists over the horizon
         self.holidays = set(model.get("holidays", []))
+        self.co2_mult = float(model.get("co2_mult", 1.0))   # tilt of the planner's CO2 weight vs price
         self.calendar = bool(model.get("calendar", 0))  # published calendar (holidays, UPC closures) instead of the list
         self.spread_scale = float(model.get("spread_scale", 1.0))
         self.spread_mode = str(model.get("spread_mode", "lead"))   # "lead": spread grows with the lead; "flat": nowcast spread everywhere
@@ -202,7 +203,7 @@ class BatteryAgent:
         i, n, cal, known = self._observe(obs)
         price, co2, load, pv = self._forecast(i, n, cal, known)
         k_co2, k_cost = self._weights()
-        w = k_co2 * co2 + k_cost * price
+        w = k_co2 * self.co2_mult * co2 + k_cost * price                # co2_mult 1 = the score's own weights
         w = np.maximum(w / max(float(np.mean(np.abs(w))), 1e-300), 1e-9)       # only relative values matter
         atoms = (load - pv)[:, None] + self._spread(n, cal)
         wmult = None
