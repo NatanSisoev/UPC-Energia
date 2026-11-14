@@ -72,6 +72,7 @@ Only "Trametre al Leaderboard" consumes quota; the web "Validació Ràpida" (48 
 4. Web "Validació Ràpida" (free) passes.
 5. Announce to the team, then submit, then log in `SUBMISSIONS.md`.
 
+- **Agent code (`agent/` and anything inside `submission.zip`) may import ONLY the allowed libraries above** — nothing else, ever (no torch, matplotlib, statsmodels, cvxpy, ortools, requests...). `sim/check.py` enforces this whitelist and fails otherwise. Training/EDA scripts, notebooks and `demo/` may use anything, but models must be saved so they load with the allowed libs only (joblib + sklearn/xgboost/lightgbm; keep versions matching `requirements.txt`).
 - Never use or embed hidden-test data; the jury audits the code.
 
 ## Repo layout

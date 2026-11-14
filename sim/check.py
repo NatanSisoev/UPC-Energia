@@ -20,15 +20,25 @@ FORBIDDEN_BUILTINS = {"eval", "exec", "__import__", "compile", "breakpoint", "gl
 FORBIDDEN_ATTRS = {"f_back", "f_locals", "f_globals", "__subclasses__", "__builtins__", "__globals__", "__code__"}
 
 
+# Whitelist (ENUNCIAT "Biblioteques admeses"): agent code may import ONLY these top-level modules.
+ALLOWED_MODULES = {
+    "numpy", "pandas", "scipy", "sklearn", "joblib", "xgboost", "lightgbm",
+    "math", "random", "datetime", "collections", "itertools", "functools", "heapq", "bisect",
+    "re", "copy", "pickle", "json", "pathlib", "typing", "dataclasses", "__future__",
+}
+
+
 def ast_scan(path: Path) -> list:
     problems = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
             for a in node.names:
-                if a.name.split(".")[0] in FORBIDDEN_MODULES:
+                root = a.name.split(".")[0]
+                if root in FORBIDDEN_MODULES or root not in ALLOWED_MODULES:
                     problems.append(f"line {node.lineno}: import '{a.name}' not allowed")
         elif isinstance(node, ast.ImportFrom) and node.module:
-            if node.module.split(".")[0] in FORBIDDEN_MODULES:
+            root = node.module.split(".")[0]
+            if root in FORBIDDEN_MODULES or root not in ALLOWED_MODULES:
                 problems.append(f"line {node.lineno}: import from '{node.module}' not allowed")
         elif isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_ATTRS:
             problems.append(f"line {node.lineno}: attribute '{node.attr}' not allowed")
