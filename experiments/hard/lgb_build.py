@@ -26,6 +26,7 @@ from sklearn.model_selection import GroupKFold
 
 import agent_hard.agent as ah
 import experiments.hard.build_model as bm
+import experiments.hard.calprof as calprof
 from experiments.mpc.arb import load_signals
 from experiments.mpc.validate import monthly_blocks
 from sim.data import load_campus_hourly
@@ -35,6 +36,12 @@ ROOT = Path(__file__).resolve().parents[2]
 SERIES = ("price", "co2", "load", "pv")
 PARAMS = dict(objective="l2", learning_rate=0.05, num_leaves=15, min_data_in_leaf=300, feature_fraction=0.8,
               bagging_fraction=0.7, bagging_freq=1, lambda_l2=10.0, verbose=-1, num_threads=4, seed=1)
+
+
+# per-series objective / size chosen by month-grouped OOF MAE (robust losses win: errors are heavy-tailed, and the
+# scenario table re-adds the error quantiles around the robust central forecast)
+SERIES_PARAMS = {"price": dict(objective="huber", alpha=0.02), "co2": dict(objective="huber", alpha=0.008),
+                 "load": dict(objective="huber", alpha=100.0, num_leaves=15), "pv": dict(objective="huber", alpha=50.0)}
 
 
 def _lin_dict(price, co2, load, pv):
@@ -117,10 +124,11 @@ def fit_series(d, s, rounds, no_month, folds=4, verbose=True):
     grp = np.broadcast_to(d["month"][:, None], ok.shape)
     Xf, yf, gf = X[ok], y[ok], grp[ok]
     oof = np.zeros(len(yf))
+    P = {**PARAMS, **SERIES_PARAMS.get(s, {})}
     for tr, te in GroupKFold(n_splits=folds).split(Xf, yf, gf):
-        b = lgb.train(PARAMS, lgb.Dataset(Xf[tr], yf[tr]), num_boost_round=rounds)
+        b = lgb.train(P, lgb.Dataset(Xf[tr], yf[tr]), num_boost_round=rounds)
         oof[te] = b.predict(Xf[te])
-    booster = lgb.train(PARAMS, lgb.Dataset(Xf, yf), num_boost_round=rounds)
+    booster = lgb.train(P, lgb.Dataset(Xf, yf), num_boost_round=rounds)
     full = np.zeros(ok.shape)
     full[ok] = oof
     if verbose:
@@ -171,6 +179,47 @@ def err_table(d, pred, k):
     return bm.fit_errors(smp, load_hat, pv_hat, k, verbose=False)
 
 
+def err_table4(d, pred, k):
+    """Like err_table, additionally split by daypart (night/work hours/evening) x working day: [7][5][6][K]."""
+    load_hat = np.maximum(d["lin_load"] + pred["load"], 0.0)
+    pv_hat = np.clip(d["lin_pv"] + pred["pv"], 0.0, 1.15 * d["clear"])
+    ok = np.isfinite(d["t_load"]) & np.isfinite(d["t_pv"]) & (d["t_load"] >= ah.MIN_LOAD_KW)
+    err = np.where(ok, (d["t_load"] - d["t_pv"]) - (load_hat - pv_hat), np.nan)
+    b = np.broadcast_to(ah.LEAD_BUCKET[:48], err.shape)
+    c = np.searchsorted(ah.CS_BINS, d["clear"])
+    ctx = ah.DAYPART[d["X_load"][:, :, 1].astype(int)] * 2 + (d["X_load"][:, :, 3] > 0)
+    qs = (np.arange(k) + 0.5) / k
+    table = np.zeros((7, 5, 6, k))
+    for bk in range(7):
+        for col in range(5):
+            for cx in range(6):
+                for sel in ((b == bk) & (c == col) & (ctx == cx) & ok, (b == bk) & (c == col) & ok, (b == bk) & ok, ok):
+                    if sel.sum() >= bm.MIN_FIT * 4:                    # fall back to coarser pools when sparse
+                        table[bk, col, cx] = np.quantile(err[sel], qs)
+                        break
+    return table
+
+
+def wmult_table(d, oof, lin, m_scen):
+    """Relative error scenarios of the score weight w = k_co2*co2 + k_cost*price, by lead bucket (planner: _value).
+    Quantiles of true w / forecast w (boosted out-of-fold forecasts); published hours are certain (ones)."""
+    run = 2016
+    kc = 0.7 / (run * np.nanmean(np.asarray(lin["co2_rate"], float)))
+    kp = 0.3 / (run * np.nanmean(np.asarray(lin["cost_rate"], float)))
+    p_hat = np.maximum(d["lin_price"] + oof["price"], 0.0)
+    c_hat = np.maximum(d["lin_co2"] + oof["co2"], 0.0)
+    w_hat, w_true = kc * c_hat + kp * p_hat, kc * d["t_co2"] + kp * d["t_price"]
+    ok = np.isfinite(w_true) & (w_hat > 0) & (np.arange(48)[None, :] >= d["known"][:, None])
+    ratio = np.where(ok, w_true / np.maximum(w_hat, 1e-12), np.nan)
+    b = np.broadcast_to(ah.LEAD_BUCKET[:48], ratio.shape)
+    qs = (np.arange(m_scen) + 0.5) / m_scen
+    table = np.ones((7, m_scen))
+    for bk in range(3, 7):
+        v = ratio[(b == bk) & ok]
+        table[bk] = np.quantile(v, qs)
+    return table
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--holdout", action="store_true")
@@ -178,6 +227,10 @@ def main():
     ap.add_argument("--no-month", action="store_true", help="make the booster blind to the month (unseen November)")
     ap.add_argument("--eval", action="store_true", help="MAE on the last 7 days of every month (holdout only)")
     ap.add_argument("--k", type=int, default=7)
+    ap.add_argument("--wm", type=int, default=7, help="price-error scenarios of the planner (0: none)")
+    ap.add_argument("--wpow", type=float, default=2.0, help="exponent applied to the fitted multipliers (widens them)")
+    ap.add_argument("--calendar", action="store_true", help="published calendar: holidays, UPC closures (day_info)")
+    ap.add_argument("--err4", action="store_true", help="scenario table split by daypart x working day")
     ap.add_argument("--leaves", type=int, default=None)
     ap.add_argument("--min-leaf", type=int, default=None)
     ap.add_argument("--lr", type=float, default=None)
@@ -215,8 +268,14 @@ def main():
             load_prof=bm._fill_gaps(bm.fit_profiles(df["load_kw"].values, df.index, dt_load, use_df)),
             price_prof=bm._fill_gaps(bm.fit_profiles(sig["price"].values, sig.index, dt_sig, use_sig)),
             co2_prof=bm._fill_gaps(bm.fit_profiles(sig["co2"].values, sig.index, dt_sig, use_sig)), kbar=kb)
+    final_prof = None
+    if a.calendar:                                                     # profiles on the calendar's day types
+        for c in bm.CHUNKS:
+            use_df, use_sig = allowed_df & (chunk_df != c), allowed_sig & (chunk_sig != c)
+            profs[c] = {**calprof.make_profiles(df, sig, use_df, use_sig), "kbar": profs[c]["kbar"]}
+        final_prof = calprof.make_profiles(df, sig, allowed_df, allowed_sig)
     base_params = {k: lin[k] for k in ("sun", "haze", "co2_rate", "cost_rate", "coef", "holidays", "err", "terminal_value")}
-    base_params.update(spread_scale=0.0, spread_mode="lead")
+    base_params.update(spread_scale=0.0, spread_mode="lead", calendar=int(a.calendar))
     chunks = (0, 1) if a.holdout else bm.CHUNKS
     d = collect_train(df, sig, base_params, lambda c: profs[c], chunks)
     print(f"collected {len(d['month'])} steps x 48 leads in {time.perf_counter() - t0:.0f}s")
@@ -227,13 +286,13 @@ def main():
         weights[s] = lead_weights(d, s, oof[s])
         oof[s] = oof[s] * weights[s][None, :]
     report(d, oof, "training rows, month-grouped OOF, after per-lead shrinkage")
-    err = err_table(d, oof, a.k)
+    err = err_table4(d, oof, a.k) if a.err4 else err_table(d, oof, a.k)
 
     out_dir = (ROOT / "experiments/hard" / ("lgb_holdout" + (f"_{a.tag}" if a.tag else ""))) if a.holdout else ROOT / "agent_hard"
     out_dir.mkdir(exist_ok=True)
     for s in SERIES:
         (out_dir / f"lgb_{s}.txt").write_text(boosters[s].model_to_string(), encoding="utf-8")
-    model = {**lin, "lgb": True, "err_lgb": err.tolist(), "lgb_w": {k: v.tolist() for k, v in weights.items()}}
+    model = {**lin, **(bm._jsonable(final_prof) if final_prof else {}), "calendar": int(a.calendar), "lgb": True, **({"wmult": wmult_table(d, oof, lin, a.wm).tolist(), "wmult_pow": a.wpow} if a.wm else {}), "err_lgb": err.tolist(), "lgb_w": {k: v.tolist() for k, v in weights.items()}}
     if a.holdout:
         model["lgb_dir"] = str(out_dir)
     json_path = (ROOT / "experiments/hard" / f"model_holdout_lgb{'_' + a.tag if a.tag else ''}.json") if a.holdout \
@@ -243,7 +302,7 @@ def main():
 
     if a.eval and a.holdout:
         data = monthly_blocks(df, "last")
-        ev = collect_eval(data, lin)
+        ev = collect_eval(data, {**lin, **(bm._jsonable(final_prof) if final_prof else {}), "calendar": int(a.calendar)})
         # evaluation uses the boosters fitted on the whole training set (no OOF needed: these days were never seen)
         pred = {}
         for s in SERIES:

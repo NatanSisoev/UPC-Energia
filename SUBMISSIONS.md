@@ -15,3 +15,6 @@ Local reference: hold-out (last 7 train days of each month) 20.32, perfect-fores
 |---|---|---|---|---|---|---|
 | H1 | 1 (Sat day) | Natan | bd278ae | 20.32 (hold-out, 90.7 % of bound) | 22.95 (public, 0 infractions) | First Hard Mode submit. Stochastic 24 h MPC + profile/ridge forecasts, 0 infractions, ~8 ms/step. |
 | H2 | 1 (Sat day) | Natan | see git log | 20.48 (hold-out, 91.4 % of bound) | **23.18** (public, 0 infractions) | `submission_hard_02.zip`: H1 + LightGBM residual forecasters (price/co2/load/pv, per-lead shrinkage, month-blind) + full-data profiles. +0.23 over H1 on the public weeks. Zip = agent.py + model_lgb.json as model.json + lgb_*.txt. |
+| H3 | 1 | Natan | uncommitted | 20.47 (hold-out) | 23.16 | H2 + robust (Huber) boosters, scenario table split by daypart x working day. No gain over H2. |
+| H4 | 1 | Natan | uncommitted | 20.67 (hold-out) | **22.83** (-0.35 vs H2) | H3 + price-uncertainty planner (`wmult`, pow 2, 24 h horizon) + published calendar (holidays, UPC closures). Regression. |
+| H5 | 1 | Natan | uncommitted | 20.47 (hold-out) | 22.79 | H4 without the calendar. Same as H4 -> the planner (`wmult`) is what does not transfer (hold-out said +0.2); the calendar is neutral/slightly positive (+0.04). |

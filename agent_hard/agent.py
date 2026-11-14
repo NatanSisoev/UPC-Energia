@@ -22,7 +22,7 @@ Only numpy + stdlib (json, math, datetime, pathlib). Every return goes through t
 """
 import json
 import math
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -43,7 +43,71 @@ LAT, LON = math.radians(41.39), 2.11     # Campus Nord, Barcelona
 MIN_LOAD_KW = 50.0             # a lower reading is a meter outage, not a measurement
 CS_MIN_KW = 40.0               # clearness index is only defined when the clear-sky production exceeds this
 LEAD_BUCKET = np.array([0, 1, 2] + [3] * 3 + [4] * 6 + [5] * 12 + [6] * 200)   # error table row of each lead
+DAYPART = np.array([0] * 7 + [1] * 12 + [2] * 5)                                  # night / working hours / evening
 CS_BINS = np.array([1.0, 400.0, 900.0, 1400.0])                                  # error table column (kW)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Calendar knowledge that is published in advance (NOT learnt from the hidden days): Spanish / Catalan / Barcelona
+# holidays of the evaluation year and the non-teaching periods of the UPC academic calendar 2025-26
+# (Christmas 29 Dec-5 Jan, Holy Week 30 Mar-6 Apr, summer 3-31 Aug). Enabled by model["calendar"] = 1.
+NATIONAL_HOLIDAYS = {date(2025, 10, 12), date(2025, 11, 1), date(2025, 12, 6), date(2025, 12, 8), date(2025, 12, 25),
+                     date(2026, 1, 1), date(2026, 1, 6), date(2026, 4, 3), date(2026, 5, 1), date(2026, 8, 15)}
+REGIONAL_HOLIDAYS = {date(2025, 9, 11), date(2025, 9, 24), date(2025, 12, 26), date(2026, 4, 6), date(2026, 5, 25),
+                     date(2026, 6, 24), date(2026, 9, 11), date(2026, 9, 24)}     # Catalonia + Barcelona local days
+CLOSURES = (("xmas", date(2025, 12, 29), date(2026, 1, 5)), ("easter", date(2026, 3, 30), date(2026, 4, 6)),
+            ("summer", date(2026, 8, 3), date(2026, 8, 31)))
+REDUCED_DAYS = {date(2025, 12, 24)}                                              # Christmas Eve: campus half empty
+_DAY_CACHE = {}
+_CAL_CACHE = {}
+
+
+def day_info(d):
+    """Calendar class of a date -> (load type, market type, holiday class).
+    load type   0 working day, 1 Saturday, 2 Sunday / holiday, 3 closure or reduced weekday (non-teaching period)
+    market type 0 weekday, 1 Saturday, 2 Sunday or NATIONAL holiday (regional/local holidays are ordinary market days)
+    holiday class 0 working day, 1 weekend, 2 national holiday, 3 regional holiday, 4 closure weekday"""
+    out = _DAY_CACHE.get(d)
+    if out is None:
+        wd = d.weekday()
+        national, regional = d in NATIONAL_HOLIDAYS, d in REGIONAL_HOLIDAYS
+        closed = d in REDUCED_DAYS or any(a <= d <= b for _, a, b in CLOSURES)
+        if wd == 6 or ((national or regional) and wd < 5):
+            lt = 2
+        elif wd == 5:
+            lt = 1
+        else:
+            lt = 3 if closed else 0
+        mt = 2 if (wd == 6 or (national and wd < 5)) else (1 if wd == 5 else 0)
+        hc = 1 if wd >= 5 else 2 if national else 3 if regional else 4 if lt == 3 else 0
+        out = _DAY_CACHE[d] = (lt, mt, hc)
+    return out
+
+
+def closure_period(d):
+    """Name of the closure period a date belongs to (None outside closures)."""
+    return "xmas" if d == date(2025, 12, 24) else next((n for n, a, b in CLOSURES if a <= d <= b), None)
+
+
+def calendar_features(d):
+    """Extra booster features of a date: holiday class, bridge flag, days to the next / since the last day off."""
+    out = _CAL_CACHE.get(d)
+    if out is None:
+        out = _CAL_CACHE[d] = _calendar_features(d)
+    return out
+
+
+def _calendar_features(d):
+    lt = day_info(d)[0]
+    hc = day_info(d)[2]
+    bridge = 0.0
+    if lt == 0:                                                   # working day squeezed between a weekday holiday and the weekend
+        wd = d.weekday()
+        hol = lambda k: day_info(d + timedelta(days=k))[0] == 2 and (d + timedelta(days=k)).weekday() < 5
+        bridge = float((wd == 4 and hol(-1)) or (wd == 0 and hol(1)))
+    to_off = next((k for k in range(1, 8) if day_info(d + timedelta(days=k))[0] != 0), 8)
+    since_off = next((k for k in range(1, 8) if day_info(d - timedelta(days=k))[0] != 0), 8)
+    return float(hc), bridge, float(to_off), float(since_off)
 
 
 def _last_sunday(year, month):
@@ -94,7 +158,12 @@ class BatteryAgent:
             self.m["err"] = np.asarray(model["err_lgb"], dtype=float)
         self.lgb_w = {s: np.asarray((model.get("lgb_w") or {}).get(s, np.ones(HORIZON)), dtype=float)
                       for s in ("price", "co2", "load", "pv")}   # per-lead shrinkage of the boosted residual
+        wm = model.get("wmult")                       # optional: (lead bucket x M) multipliers of the score weight w
+        self.wmult = None if wm is None else np.maximum(np.asarray(wm, dtype=float), 0.02)
+        self.wmult_pow = float(model.get("wmult_pow", 1.0))
+        self.rho = float(model.get("wmult_rho", 0.0))   # share of the price-error variance that persists over the horizon
         self.holidays = set(model.get("holidays", []))
+        self.calendar = bool(model.get("calendar", 0))  # published calendar (holidays, UPC closures) instead of the list
         self.spread_scale = float(model.get("spread_scale", 1.0))
         self.spread_mode = str(model.get("spread_mode", "lead"))   # "lead": spread grows with the lead; "flat": nowcast spread everywhere
         self.tv = float(model.get("terminal_value", 0.0))          # value of one stored kWh after the horizon (0: empty the battery)
@@ -136,7 +205,14 @@ class BatteryAgent:
         w = k_co2 * co2 + k_cost * price
         w = np.maximum(w / max(float(np.mean(np.abs(w))), 1e-300), 1e-9)       # only relative values matter
         atoms = (load - pv)[:, None] + self._spread(n, cal)
-        return self._plan(w, atoms, soc, cap, pmax)
+        wmult = None
+        if self.wmult is not None:                                     # relative price-error scenarios by lead
+            if self.wmult.ndim == 3:                                   # table also split by daypart of the target hour
+                wmult = self.wmult[LEAD_BUCKET[:n], DAYPART[cal["hour"][:n]]] ** self.wmult_pow
+            else:
+                wmult = self.wmult[LEAD_BUCKET[:n]] ** self.wmult_pow
+            wmult[:known] = 1.0                                        # the published hours are certain
+        return self._plan(w, atoms, soc, cap, pmax, wmult)
 
     def _observe(self, obs):
         """Book-keeping of one step: clock, week boundaries, measurements. Returns (step, hours to plan, calendar of
@@ -197,11 +273,17 @@ class BatteryAgent:
         hour = np.array([t.hour for t in times])
         wd = np.array([t.weekday() for t in times])
         daytype = np.where(wd < 5, 0, wd - 4)                          # 0 working day, 1 Saturday, 2 Sunday
-        holiday = np.array([t.strftime("%Y-%m-%d") in self.holidays for t in times])
         doy = np.array([t.timetuple().tm_yday for t in times], dtype=float)
         summer = np.array([_is_summer_time(t) for t in times])
         basis = clear_sky_basis(doy, hour.astype(float), summer, float(self.m["haze"]))
         clear = np.maximum(np.tensordot(self.m["sun"], basis, axes=1), 0.0)
+        if self.calendar:                                              # published calendar replaces the holiday list
+            info = [day_info(t.date()) for t in times]
+            cf = np.array([calendar_features(t.date()) for t in times])
+            return {"month": month, "hour": hour, "daytype": np.array([x[1] for x in info]),   # market type
+                    "loadtype": np.array([x[0] for x in info]), "clear": clear,
+                    "hol_cls": cf[:, 0], "bridge": cf[:, 1], "to_off": cf[:, 2], "since_off": cf[:, 3]}
+        holiday = np.array([t.strftime("%Y-%m-%d") in self.holidays for t in times])
         return {"month": month, "hour": hour, "daytype": daytype, "loadtype": np.where(holiday, 2, daytype),
                 "clear": clear}
 
@@ -348,6 +430,8 @@ class BatteryAgent:
         common = [np.arange(n, dtype=float), cal["hour"][:n].astype(float), cal["month"][:n].astype(float),
                   cal["loadtype"][:n].astype(float), f["pv"][1][:n], cal["clear"][:n]]
         common += [np.full(n, c, dtype=float) for c in const]
+        if self.calendar:                                              # published-calendar features of the target hour
+            common += [cal["hol_cls"][:n], cal["bridge"][:n], cal["to_off"][:n], cal["since_off"][:n]]
         out = {}
         wx = [last("wind"), mean24("wind"), mean24("irr"), mean24("tpan")]
         wx = [np.full(n, c, dtype=float) for c in wx]
@@ -384,33 +468,59 @@ class BatteryAgent:
         """Forecast-error scenarios of the net load, kW: (n hours, K equally likely scenarios)."""
         bucket = LEAD_BUCKET[:n] if self.spread_mode == "lead" else np.zeros(n, dtype=int)
         col = np.searchsorted(CS_BINS, cal["clear"][:n])
+        if self.m["err"].ndim == 4:                                    # table also split by daypart x working day
+            ctx = DAYPART[cal["hour"][:n]] * 2 + (cal["loadtype"][:n] > 0)
+            return self.m["err"][bucket, col, ctx] * self.spread_scale
         return self.m["err"][bucket, col] * self.spread_scale
 
     # ------------------------------------------------------------------ planner
-    def _plan(self, w, atoms, soc, cap, pmax):
+    def _value(self, w, atoms, grid, pmax, wmult):
+        """Backward pass: q(s) = marginal value of one stored kWh at state of charge s (see _plan)."""
+        up, down = pmax * ETA, pmax / ETA
+        T = len(w)
+        rank = np.arange(atoms.shape[1]) / atoms.shape[1]
+        # everything that does not depend on the value function, for all hours at once
+        p = np.sort(np.clip(-atoms, -pmax, pmax), axis=1)              # setpoint at which each scenario stops importing
+        charging = p > 0
+        col = lambda v: np.full((T, 1), v)
+        shifts = np.concatenate((col(-down), np.where(charging, p * ETA, p / ETA), col(0.0), col(up)), axis=1)
+        levels = np.concatenate((col(-np.inf), w[:, None] * rank[None, :] * np.where(charging, 1.0 / ETA, ETA),
+                                 (w * ETA * np.mean(atoms > 0, axis=1))[:, None],
+                                 (w / ETA * np.mean(atoms > -pmax, axis=1))[:, None]), axis=1)
+        q = np.full(self.n_grid, -self.tv)      # value of stored energy after the horizon (0: nothing is worth storing)
+        for t in range(T - 1, 0, -1):
+            g = np.interp(grid[None, :] + shifts[t][:, None], grid, q, left=np.inf, right=-np.inf)
+            if wmult is None:
+                q = np.min(np.maximum(g, levels[t][:, None]), axis=0)
+            else:                                                      # price of hour t is random: average over scenarios
+                lv = levels[t][None, :, None] * wmult[t][:, None, None]          # (scenarios, steps, 1), batched
+                q = np.min(np.maximum(g[None], lv), axis=1).mean(axis=0)
+        return -np.concatenate(([0.0], np.cumsum(0.5 * (q[1:] + q[:-1]) * np.diff(grid))))   # cost-to-go(s) + const
+
+    def _plan(self, w, atoms, soc, cap, pmax, wmult=None):
         """Minimises  sum_t w_t * E[max(net_t + p_t, 0)]  over the setpoints p_t (battery limits and efficiency)
         and returns p_0.  q(s) = marginal value of one stored kWh at state of charge s, propagated backwards:
         the expected marginal cost of a setpoint is a staircase (one step per scenario), and q of the previous
-        hour is where that staircase crosses q of the next one (min over the steps of max(q shifted, step level))."""
+        hour is where that staircase crosses q of the next one (min over the steps of max(q shifted, step level)).
+        wmult (n x M): relative price-error scenarios of every hour. They are split into a persistent part
+        (rho of the variance: one price level for the whole horizon, 3 Gauss-Hermite nodes, one backward pass each,
+        averaged -> only the first decision is shared) and an hourly innovation (recourse inside each pass)."""
         grid = np.linspace(0.0, cap, self.n_grid)
-        up, down = pmax * ETA, pmax / ETA
-        rank = np.arange(atoms.shape[1]) / atoms.shape[1]
-        q = np.full(self.n_grid, -self.tv)      # value of stored energy after the horizon (0: nothing is worth storing)
-        for t in range(len(w) - 1, 0, -1):
-            p = np.sort(np.clip(-atoms[t], -pmax, pmax))               # setpoint at which each scenario stops importing
-            charging = p > 0
-            shifts = np.concatenate(([-down], np.where(charging, p * ETA, p / ETA), [0.0, up]))
-            levels = np.concatenate(([-np.inf], w[t] * rank * np.where(charging, 1.0 / ETA, ETA),
-                                     [w[t] * ETA * np.mean(atoms[t] > 0), w[t] / ETA * np.mean(atoms[t] > -pmax)]))
-            g = np.interp(grid[None, :] + shifts[:, None], grid, q, left=np.inf, right=-np.inf)
-            q = np.min(np.maximum(g, levels[:, None]), axis=0)
-        future = -np.concatenate(([0.0], np.cumsum(0.5 * (q[1:] + q[:-1]) * np.diff(grid))))   # cost-to-go(s) + const
+        if wmult is None or self.rho <= 0.0:
+            future = self._value(w, atoms, grid, pmax, wmult)
+        else:
+            dev = wmult - 1.0
+            sig = np.std(dev, axis=1, keepdims=True)
+            local = 1.0 + np.sqrt(1.0 - self.rho) * dev
+            future = 0.0
+            for c, pg in zip((-math.sqrt(3.0), 0.0, math.sqrt(3.0)), (1 / 6, 2 / 3, 1 / 6)):
+                lvl = 1.0 + math.sqrt(self.rho) * c * sig                 # (n, 1) persistent level of this node
+                future = future + pg * self._value(w, atoms, grid, pmax, np.maximum(local * lvl, 0.02))
         max_c = max(0.0, min(pmax, (cap - soc) / ETA - EPS))
         max_d = max(0.0, min(pmax, soc * ETA - EPS))
         cand = np.unique(np.concatenate((np.linspace(-max_d, max_c, 301), np.clip(-atoms[0], -max_d, max_c), [0.0])))
         soc_next = soc + np.where(cand >= 0, cand * ETA, cand / ETA)
-        cost = w[0] * np.mean(np.maximum(atoms[0][None, :] + cand[:, None], 0.0), axis=1) \
-            + np.interp(soc_next, grid, future)
+        cost = w[0] * np.mean(np.maximum(atoms[0][None, :] + cand[:, None], 0.0), axis=1)             + np.interp(soc_next, grid, future)
         best = cand[cost <= cost.min() + 1e-9]
         return float(best[np.argmin(np.abs(best))])                    # among equals, the gentlest setpoint
 
