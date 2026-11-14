@@ -53,7 +53,7 @@ export interface GroundData {
 
 export interface ReplayWeek {
   start: string;
-  ms?: number[];
+  ms: number[];
   load: number[];
   pv: number[];
   price: number[];

@@ -72,7 +72,7 @@ export default function App() {
                   </button>
                 ))}
               </nav>
-              <div className="pop-in min-h-0 flex-1" key={tab}>
+              <div className="pop-in flex min-h-0 flex-1 flex-col" key={tab}>
                 <RightPanel tab={tab} />
               </div>
             </aside>

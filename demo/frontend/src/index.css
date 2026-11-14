@@ -41,15 +41,18 @@ body,
 }
 
 /* ---------- chunky game surfaces ---------- */
-.panel {
-  position: relative;
-  background: linear-gradient(180deg, #243262 0%, #19234a 100%);
-  border: 2px solid var(--color-edge);
-  border-radius: 20px;
-  box-shadow:
-    0 5px 0 0 #0b1128,
-    0 14px 30px -10px rgb(4 8 24 / 0.7),
-    inset 0 2px 0 0 rgb(255 255 255 / 0.1);
+/* in @layer components so Tailwind utilities (absolute, rounded-*) override these defaults */
+@layer components {
+  .panel {
+    position: relative;
+    background: linear-gradient(180deg, #243262 0%, #19234a 100%);
+    border: 2px solid var(--color-edge);
+    border-radius: 20px;
+    box-shadow:
+      0 5px 0 0 #0b1128,
+      0 14px 30px -10px rgb(4 8 24 / 0.7),
+      inset 0 2px 0 0 rgb(255 255 255 / 0.1);
+  }
 }
 .panel-flat {
   background: rgb(10 16 42 / 0.55);

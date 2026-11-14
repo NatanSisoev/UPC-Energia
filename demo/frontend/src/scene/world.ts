@@ -25,6 +25,7 @@ import { buildNetwork, edgeFlows, along, type BuildingGeo, type Network } from '
 import { roofKwp, occupancy } from '../sim/engine';
 import type { PanelModelId } from '../types';
 import { derived } from '../store/useSim';
+import { weekMsAt } from '../lib/format';
 
 type RGB = [number, number, number];
 type RGBA = [number, number, number, number];
@@ -928,7 +929,7 @@ export function buildLayers(W: World, f: Frame, onHover: (id: string | null, x: 
 
   // ---- people concentration
   if (f.layers.people && snap && dv) {
-    const dd = new Date(dv.startMs + snap.tMin * 60_000);
+    const dd = new Date(weekMsAt(dv.week.ms, snap.tMin));
     const hod = dd.getUTCHours();
     const dow = (dd.getUTCDay() + 6) % 7;
     const dots: Array<{ pos: number[]; color: RGB }> = [];

@@ -36,3 +36,14 @@ export function dayLabelAt(startMs: number, tMin: number): string {
   const d = new Date(startMs + tMin * 60_000);
   return `${DOW[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
 }
+
+/**
+ * Wall-clock ms at minute `tMin` of a replay week. Weeks can contain data gaps (hour h is not always
+ * start + h hours), so interpolate inside the real per-row timestamps instead of using start + tMin.
+ */
+export function weekMsAt(ms: ArrayLike<number>, tMin: number): number {
+  const n = ms.length;
+  const h = Math.min(n - 1, Math.max(0, Math.floor(tMin / 60)));
+  const f = Math.min(1, Math.max(0, tMin / 60 - h));
+  return ms[h] + f * 3_600_000;
+}

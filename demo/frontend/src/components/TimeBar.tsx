@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { derived, useSim } from '../store/useSim';
 import { sunAt } from '../lib/sun';
-import { clockAt, dayLabelAt } from '../lib/format';
+import { clockAt, dayLabelAt, weekMsAt } from '../lib/format';
 import { Chip } from './ui';
 
 const SPEEDS: Array<[number, string]> = [
@@ -30,10 +30,10 @@ export default function TimeBar() {
     let spMax = 1;
     for (let h = 0; h < 168; h++) spMax = Math.max(spMax, Math.abs(d.chosen.sp[h]));
     for (let h = 0; h < 168; h++) {
-      const el = sunAt(d.startMs + h * 3_600_000 + 1_800_000).elev;
+      const el = sunAt(d.week.ms[h] + 1_800_000).elev;
       rows.push({ h, day: Math.min(1, Math.max(0, (el + 6) / 18)), sp: d.chosen.sp[h] / spMax, price: d.week.price[h] / pMax });
     }
-    const days = Array.from({ length: 7 }, (_, i) => dayLabelAt(d.startMs, i * 1440).split(' ')[0]);
+    const days = Array.from({ length: 7 }, (_, i) => dayLabelAt(weekMsAt(d.week.ms, i * 1440), 0).split(' ')[0]);
     return { rows, days };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, d?.week.start]);
@@ -46,7 +46,7 @@ export default function TimeBar() {
   };
 
   const st = useSim.getState();
-  const startMs = d?.startMs ?? 0;
+  const nowMs = d ? weekMsAt(d.week.ms, tMin) : 0;
 
   return (
     <div className="panel pointer-events-auto flex w-full max-w-[860px] items-center gap-3 !rounded-[22px] px-3 py-2.5">
@@ -97,8 +97,8 @@ export default function TimeBar() {
       </div>
 
       <div className="tnum w-[92px] shrink-0 text-center leading-tight">
-        <div className="font-display text-[22px] text-white">{clockAt(startMs, tMin)}</div>
-        <div className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-300">{dayLabelAt(startMs, tMin)}</div>
+        <div className="font-display text-[22px] text-white">{clockAt(nowMs, 0)}</div>
+        <div className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-300">{dayLabelAt(nowMs, 0)}</div>
       </div>
 
       <div className="flex shrink-0 flex-col gap-1.5">

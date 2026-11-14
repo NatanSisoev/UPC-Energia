@@ -29,6 +29,7 @@ import {
 } from '../sim/engine';
 import { simulateWeek, type SimResult, type WeekInput } from '../sim/challenge';
 import { sunAt } from '../lib/sun';
+import { weekMsAt } from '../lib/format';
 
 const HOURS = 168;
 
@@ -232,7 +233,7 @@ function recompute(set: Setter, get: () => SimStore): void {
   const key = `${s.weekIdx}`;
   let shares = shareCache.get(key);
   if (!shares) {
-    shares = buildLoadShares(props, startMs, HOURS);
+    shares = buildLoadShares(props, week.ms, HOURS);
     shareCache.set(key, shares);
   }
   const pvTot = new Float64Array(HOURS);
@@ -296,7 +297,7 @@ function snapshotAt(s: SimStore, tMin: number): Snapshot | null {
   const baseCostEur = r.cumBaseCost[h] + (r.cumBaseCost[h + 1] - r.cumBaseCost[h]) * f;
   const dCo2Pct = baseCo2Kg > 0 ? (100 * (baseCo2Kg - co2Kg)) / baseCo2Kg : 0;
   const dCostPct = baseCostEur > 0 ? (100 * (baseCostEur - costEur)) / baseCostEur : 0;
-  const clockMs = d.startMs + tMin * 60_000;
+  const clockMs = weekMsAt(d.week.ms, tMin);
   const sunMs = s.sunLock == null ? clockMs : Math.floor(clockMs / 86_400_000) * 86_400_000 + s.sunLock * 3_600_000;
   const sun = sunAt(sunMs);
   const trueSun = sunAt(clockMs);

@@ -12,7 +12,7 @@ export default function Dashboard() {
     if (!d) return [];
     return Array.from({ length: 168 }, (_, h) => ({
       h,
-      label: `${dayLabelAt(d.startMs, h * 60).split(' ')[0]} ${clockAt(d.startMs, h * 60)}`,
+      label: `${dayLabelAt(d.week.ms[h], 0).split(' ')[0]} ${clockAt(d.week.ms[h], 0)}`,
       load: d.week.load[h] / 1000,
       solar: d.pvTot[h] / 1000,
       base: d.chosen.baseGrid[h] / 1000,
@@ -27,7 +27,7 @@ export default function Dashboard() {
   const cursor = tMin / 60;
   const tick = { fill: '#8da0d8', fontSize: 10, fontWeight: 700 };
   const common = { data: rows, margin: { top: 6, right: 8, left: -14, bottom: 0 } };
-  const x = <XAxis dataKey="h" tick={tick} tickFormatter={(h) => (h % 24 === 0 ? dayLabelAt(d?.startMs ?? 0, h * 60).split(' ')[0] : '')} interval={0} axisLine={false} tickLine={false} />;
+  const x = <XAxis dataKey="h" tick={tick} tickFormatter={(h) => (h % 24 === 0 ? dayLabelAt(d?.week.ms[h] ?? 0, 0).split(' ')[0] : '')} interval={0} axisLine={false} tickLine={false} />;
 
   return (
     <div className="grid h-full grid-cols-3 gap-3">

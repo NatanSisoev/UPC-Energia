@@ -18,7 +18,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={`panel flex flex-col overflow-hidden ${className}`}>
+    <section className={`panel flex min-h-0 flex-col overflow-hidden ${className}`}>
       {title && (
         <header className="flex items-center justify-between gap-2 border-b-2 border-white/5 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2.5">

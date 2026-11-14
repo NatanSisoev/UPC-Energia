@@ -76,16 +76,16 @@ export function occupancy(cat: string, hourOfDay: number, dow: number): number {
  * Share of the real campus load drawn by each building, for every hour of a week.
  * Layout: shares[b * hours + h]; for each h the shares sum to 1.
  */
-export function buildLoadShares(buildings: BuildingProps[], startMs: number, hours: number): Float64Array {
+export function buildLoadShares(buildings: BuildingProps[], ms: ArrayLike<number>, hours: number): Float64Array {
   const nb = buildings.length;
   const out = new Float64Array(nb * hours);
   for (let h = 0; h < hours; h++) {
-    const d = new Date(startMs + h * 3_600_000);
+    const d = new Date(ms[h]);
     const hod = d.getUTCHours();
     const dow = (d.getUTCDay() + 6) % 7;
     let sum = 0;
     for (let b = 0; b < nb; b++) {
-      const v = rawLoad(buildings[b], hod, dow, Math.floor(startMs / 3_600_000) + h);
+      const v = rawLoad(buildings[b], hod, dow, Math.floor(ms[h] / 3_600_000));
       out[b * hours + h] = v;
       sum += v;
     }

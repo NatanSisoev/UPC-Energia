@@ -34,7 +34,7 @@ export default function Controls() {
   return (
     <div className="pointer-events-auto relative flex flex-col items-end gap-2.5">
       {menu === 'layers' && (
-        <div className="panel pop-in absolute bottom-full right-0 mb-3 w-[300px] !rounded-[20px] p-3">
+        <div className="panel pop-in absolute bottom-full right-0 mb-3 w-[300px] max-h-[calc(100vh-250px)] overflow-y-auto !rounded-[20px] p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="panel-title text-white">🗺️ Map layers</span>
             <button type="button" onClick={() => setMenu(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
