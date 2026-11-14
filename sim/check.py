@@ -22,9 +22,11 @@ FORBIDDEN_ATTRS = {"f_back", "f_locals", "f_globals", "__subclasses__", "__built
 
 # Whitelist (ENUNCIAT "Biblioteques admeses"): agent code may import ONLY these top-level modules.
 ALLOWED_MODULES = {
+    # exactly the list on the web "Entorn Oficial d'Execucio" (stricter than ENUNCIAT.md, which also admits
+    # functools/heapq/bisect/re/copy/pickle/dataclasses - we avoid those to be safe)
     "numpy", "pandas", "scipy", "sklearn", "joblib", "xgboost", "lightgbm",
-    "math", "random", "datetime", "collections", "itertools", "functools", "heapq", "bisect",
-    "re", "copy", "pickle", "json", "pathlib", "typing", "dataclasses", "__future__",
+    "math", "datetime", "collections", "itertools", "random", "json", "pathlib", "typing",
+    "__future__",
 }
 
 
