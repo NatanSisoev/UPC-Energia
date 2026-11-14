@@ -44,9 +44,35 @@ Sami's agent: you may read everything but only edit `demo/` (and `docs/HANDOFF.m
 - Push often. Need a teammate's work → `git fetch` + merge their branch or `git checkout origin/<branch> -- <file>`.
 - **Only to `main`**: new best agent (verified), shared infra, demo milestones. Never broken code, data, or the PIN.
 - Never force-push. Never edit another person's branch.
-- Leaderboard quota is 10/shift — only submit what's on `main`, after local eval + free web quick-validation, and announce it.
-- Agent code must **never import `os`, `sys`, `subprocess`, `inspect`, `socket`, `urllib`, `requests`, nor use `eval`/`exec`**; only numpy, pandas, scipy, scikit-learn, joblib, xgboost, lightgbm + stdlib listed in CHALLENGE.md.
-- Agent must always apply the SOC safety clamp (0 violations) and run in well under 60 s for 2,016 steps.
+
+## Challenge rules cheat-sheet (full text: CHALLENGE.md)
+
+**Score** = `max(0, 0.70·ΔCO2(%) + 0.30·ΔCost(%) − penalty·infractions)`, Δ vs. the same campus with no battery. Official `environment.py`: 0.2 points per infraction; ENUNCIAT/FAQ say 1.00 → assume 1.00. Tie-break: score → fewer infractions → earlier submission.
+Battery: 2,000 kWh, ±500 kW, round-trip 90 % (η = √0.9 each way), SOC0 50 %, no export revenue, no degradation.
+
+**Submission quota — 10 per shift, 3 shifts (30 total), unused quota does not carry over:**
+| Shift | Window | Quota |
+|---|---|---|
+| 1 | Saturday day, until 21:00 | 10 |
+| 2 | Saturday night, 21:00 → Sunday 08:00 | 10 |
+| 3 | Sunday 08:00 → challenge close | 10 |
+Only "Trametre al Leaderboard" consumes quota; the web "Validació Ràpida" (48 h test) is free and unlimited; failed/invalid submissions don't count. Log every real submit in `SUBMISSIONS.md` and announce it first. PIN: 4+ chars, kept private, never in git.
+
+**Server limits:** 60 s total per simulation, 25 MB max file, `agent.py` at the ZIP root, models via `Path(__file__).parent`.
+
+**AST scanner (auto-reject)** — forbidden modules: `os, sys, shutil, subprocess, socket, urllib, requests, http, ftplib, paramiko, telnetlib, pty, posix, ctypes, importlib, inspect, gc, builtins, fcntl, signal, threading, multiprocessing, aiohttp`; forbidden calls: `eval, exec, __import__, compile, breakpoint, globals, locals, vars, system, popen, rmtree, currentframe, stack`; forbidden attributes: `__code__, __globals__, __builtins__, __subclasses__, f_back, f_locals, f_globals`. Allowed: numpy, pandas, scipy, scikit-learn, joblib, xgboost, lightgbm + stdlib (math, datetime, collections, itertools, functools, heapq, bisect, re, copy, pickle, json, pathlib, typing, dataclasses, random). Mirrored in `sim/check.py`.
+
+**0-infractions guarantee:** every `act()` must return through the clamp (see `BatteryAgent._clamp` in `agent/agent.py`):
+`max_charge = min(500, (2000 − soc_kwh)/η − 1e-4)`, `max_discharge = min(500, soc_kwh·η − 1e-4)`, return `clip(setpoint, −max_discharge, max_charge)`; also return a finite float (never NaN). `tests/test_sim.py` checks it at SOC 0 / full, and `python -m sim.evaluate` must report `violations=0` on all train weeks.
+
+**Pre-submit checklist (every real submit):**
+1. `pytest` green and `python -m sim.evaluate --weeks` → better than current `main` on whole-week CV, `violations=0`.
+2. `python -m sim.check agent/agent.py --zip` → PASS (AST scan, clamp at extreme SOC, timing <60 s for 2,016 h).
+3. `python starter_kit/check_submission.py submission.zip` → valid (official smoke test).
+4. Web "Validació Ràpida" (free) passes.
+5. Announce to the team, then submit, then log in `SUBMISSIONS.md`.
+
+- Never use or embed hidden-test data; the jury audits the code.
 
 ## Repo layout
 
@@ -80,8 +106,9 @@ python -m sim.check agent/agent.py       # AST/clamp/timing check; --zip builds 
 
 ## Engineering notes
 
-- The simulator in `sim/` is **our approximation** of the unreleased evaluator (details such as export compensation 0.04 €/kWh, percent units, violation definition are inferred from the page). When the official `starter_kit/environment.py` is available locally, validate against it and update `sim/` so scores match, then log it in `docs/HANDOFF.md`.
-- Page inconsistency: infraction penalty stated as −0.20 (formula) and −1.00 (FAQ). Treat any violation as very costly.
-- Avoid overfitting: train has ~first 3 weeks of each month; test = last week of each month (hidden 50 % private). Validate with whole-week blocks, never random hour splits.
+- `sim/` is validated against the official `starter_kit/environment.py` (`tests/test_vs_official.py`): export price 0, baseline = max(load − pv, 0), CO2/cost on grid import only. If you change `sim/`, that test must still pass and the change goes through `main`.
+- Baseline template scores ≈ 1.3 on the real train data (dCO2 ≈ 0.9 %, dCost ≈ 2.2 %) — gains are small; judge changes on whole-week blocks.
+- Avoid overfitting: train = first ~3 weeks of each month; hidden test = last 7 days of each month (public 50 % on the leaderboard, private 50 % for the final verdict). Never random hour splits.
+- Month jumps: if `obs["timestamp"] − previous > 2 h`, reset short rolling windows. SOC may or may not restart at 50 % for each test week (docs disagree) — don't depend on it.
 - Prices/CO2 for the next 24 h are given; demand & solar are not and must be forecast.
 - Keep code clean and commented where non-obvious — the jury audits all submitted code.
