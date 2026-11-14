@@ -1,32 +1,36 @@
-# React + TypeScript + Vite
+# Campus Nord Energy Twin — demo frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Game-style 3D digital twin of UPC Campus Nord that replays real challenge weeks and lets the audience change the campus (solar, battery) and watch the real
+challenge agent and score react. Stack: Vite 8 · React 19 · TypeScript · deck.gl 9 (standalone `Deck`, no basemap tiles) · Tailwind 4 · zustand · recharts · Nunito (bundled).
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # tsc -b && vite build (must stay green)
+npm run validate   # TS engine vs Python results on all 35 real weeks (must stay green)
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Architecture
+
+```
+src/sim/challenge.ts   PURE port of sim/simulator.py + agent/agent.py (24 h MPC) + template agent. No imports. Units/sign = challenge (kW, kWh, EUR/kWh, kg/kWh, + = charge).
+src/sim/engine.ts      per-building disaggregation of the REAL campus load, per-building solar from the real plant yield, battery-fleet -> one equivalent battery, occupancy model.
+src/store/useSim.ts    zustand store. Playback clock over one real week; `recompute()` re-runs mpc/template/none simulations when week/solar/battery/agent change;
+                       `snapshotAt(tMin)` derives everything shown (cumulative KPIs, soc, sun, weather). Heavy arrays live in `derived.current`, not in React state.
+src/scene/geo.ts       local metric frame + polygon helpers.
+src/scene/network.ts   buried cable network: MST over substation/battery/buildings, orthogonal routing on the street grid, true subtree power flows per cable.
+src/scene/world.ts     static geometry (buildings, PV candidates, trees, roads, substation, battery yard, clouds) + `buildLayers()` per-frame deck.gl layer factory (layers, day/night, heatmap, people, weather).
+src/components/        MapView (Deck, camera, lighting, render loop) · KpiBar · Advisor · TimeBar · RightPanel (Campus/Solar/Battery/Impact) · Controls (camera, X-ray, Sun, Layers, Charts) · Dashboard · Legend · ui
+scripts/               export_replay.py · build-campus-data.mjs · build-ground-data.mjs · validate.ts
+public/data/           replay.json · campus.json · ground.json (see ../README.md)
+```
+
+## Conventions
+
+- Numbers on screen must come from `challenge.ts` (the same formulas as `sim/`). Never add a "demo-only" metric formula.
+- Deterministic: no `Math.random`/`Date.now` in sim or scene geometry (use `hash()` from `src/data/scenario.ts`).
+- Scene layers are rebuilt ~30 fps; keep `data` arrays referentially stable (build once in `buildWorld`) and use `updateTriggers`.
+- Per-building load/solar are an illustrative split of the real campus totals; campus totals are real. As-built PV = 160 kWp (assumption from the ~144 kW peak in the data).
+- `AgentKind` `none` = no battery, `template` = organisers' rules, `mpc` = our agent.
+
+Known limits and the backlog: see [HANDOFF.md](HANDOFF.md).

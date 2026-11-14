@@ -56,8 +56,8 @@ Owner of `notebooks/`, `experiments/forecast/`, `agent/models/`.
 
 ### Branch `sami` — DEMO track: frontend, story, presentation
 Owner of `demo/`.
-1. Pick the stack (Streamlit or static HTML/JS), build a skeleton that replays a week from `sim.simulate(agent, df).trace` (SOC, setpoint, grid import) with KPI cards (CO2 avoided, EUR saved, infractions).
-2. Data-insights page with real figures (price/CO2 daily profile, solar curve, demand by weekday) — use Aiman's EDA findings.
+1. DONE (2026-11-14) — game-style 3D digital twin in `demo/frontend/` (Vite + React + deck.gl): replays the 35 real weeks through a TypeScript port of `sim/` + the MPC agent (parity-checked, `npm run validate`), with layers, sun control, impact report. Read `demo/frontend/HANDOFF.md` (state, known issues, backlog) before touching it.
+2. TO DO — data-insights page with real figures (price/CO2 daily profile, solar curve, demand by weekday) — use Aiman's EDA findings.
 3. Compare: no battery vs template baseline vs our best agent; optional what-if slider (CO2 vs cost weight).
 4. Slides + 3-minute pitch + fallback screen-recording. Story outline is in `PLAN.md`. Save result data to `demo/data/` and document the format in `docs/HANDOFF.md`.
 Sami's agent: you may read everything but only edit `demo/` (and `docs/HANDOFF.md` entries). Ask the model people for agent traces rather than editing `agent/` or `sim/`.
@@ -109,7 +109,7 @@ sim/                  # Local simulator + metric + submission checker (shared in
   simulator.py        #   battery physics + scoring (our reimplementation; replace/validate vs official environment.py)
   evaluate.py         #   python -m sim.evaluate [agent path] [--weeks]
   check.py            #   python -m sim.check agent/agent.py  (AST scan, clamp test, timing, builds submission.zip)
-demo/                 # DEMO track: app, figures, slides
+demo/                 # DEMO track: demo/frontend (3D twin app, see its HANDOFF.md), figures, slides
 notebooks/            # exploration (MODEL track)
 experiments/          # per-experiment code (experiments/<name>/): oracle/ (perfect-foresight bound), mpc/ (arbitrage bench,
                       #   sensitivity, official-env validation), baseline/ (the original template agent)
