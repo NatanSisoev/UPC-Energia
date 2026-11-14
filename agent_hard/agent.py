@@ -27,7 +27,12 @@ from pathlib import Path
 
 import numpy as np
 
-ETA = 0.9 ** 0.5               # one-way efficiency (90 % round trip)
+try:                                                  # optional: gradient-boosted residual forecasters (see _lgb_apply)
+    import lightgbm as _lgb
+except Exception:                                     # no lightgbm: the linear corrections are used
+    _lgb = None
+
+ETA = 0.9 ** 0.5              # one-way efficiency (90 % round trip)
 EPS = 1e-4                     # safety margin of the clamp (kW)
 CAP_DEFAULT, P_DEFAULT = 6000.0, 1500.0
 HORIZON = 48                   # hours planned ahead
@@ -84,13 +89,20 @@ class BatteryAgent:
         self.m = {k: np.asarray(model[k], dtype=float) for k in
                   ("price_prof", "co2_prof", "load_prof", "sun", "haze", "kbar", "err", "co2_rate", "cost_rate")}
         self.coef = {s: {r: np.asarray(c, dtype=float) for r, c in d.items()} for s, d in model["coef"].items()}
+        self.lgb = self._load_lgb(model)              # None -> linear corrections only (the validated fallback)
+        if self.lgb is not None and "err_lgb" in model:   # the boosted forecasts have their own error scenarios
+            self.m["err"] = np.asarray(model["err_lgb"], dtype=float)
+        self.lgb_w = {s: np.asarray((model.get("lgb_w") or {}).get(s, np.ones(HORIZON)), dtype=float)
+                      for s in ("price", "co2", "load", "pv")}   # per-lead shrinkage of the boosted residual
         self.holidays = set(model.get("holidays", []))
         self.spread_scale = float(model.get("spread_scale", 1.0))
         self.spread_mode = str(model.get("spread_mode", "lead"))   # "lead": spread grows with the lead; "flat": nowcast spread everywhere
         self.tv = float(model.get("terminal_value", 0.0))          # value of one stored kWh after the horizon (0: empty the battery)
+        self.horizon = int(model.get("horizon", HORIZON))          # hours planned ahead (24 tuned = same score, half cost)
+        self.n_grid = int(model.get("n_grid", N_GRID))             # SOC grid of the planner (121 tuned: no score loss)
         self.historial = []                           # (timestamp, soc_kwh, setpoint_kw) of every step
-        size = RUN_HOURS + HORIZON + 8
-        self.val = {s: np.full(size, np.nan) for s in ("price", "co2", "load", "pv")}    # measurements by step
+        size = RUN_HOURS + self.horizon + 8
+        self.val = {s: np.full(size, np.nan) for s in ("price", "co2", "load", "pv", "irr", "tamb", "tpan")}   # measurements by step
         self.base = {s: np.full(size, np.nan) for s in ("price", "co2", "load", "pv")}   # profile / clear sky
         self.step = -1
         self.block_start = 0                          # step at which the current contiguous week began
@@ -128,10 +140,10 @@ class BatteryAgent:
 
     def _observe(self, obs):
         """Book-keeping of one step: clock, week boundaries, measurements. Returns (step, hours to plan, calendar of
-        the next HORIZON hours, number of hours of price/CO2 published by the market)."""
+        the next `horizon` hours, number of hours of price/CO2 published by the market)."""
         self.step += 1
         i = self.step
-        if i + HORIZON + 4 >= len(self.val["price"]):                 # longer run than expected: grow the buffers
+        if i + self.horizon + 4 >= len(self.val["price"]):            # longer run than expected: grow the buffers
             for d in (self.val, self.base):
                 for s in d:
                     d[s] = np.concatenate([d[s], np.full(RUN_HOURS, np.nan)])
@@ -144,10 +156,10 @@ class BatteryAgent:
         co2s = np.asarray(obs.get("co2_properes_24h", []), dtype=float).ravel()
         known = min(len(prices), len(co2s))
         ends_soon = known < 3                                          # lists are only truncated at the very end
-        remaining = known if ends_soon else (RUN_HOURS - i if i < RUN_HOURS else HORIZON)
-        n = int(max(1, min(HORIZON, remaining)))
+        remaining = known if ends_soon else (RUN_HOURS - i if i < RUN_HOURS else self.horizon)
+        n = int(max(1, min(self.horizon, remaining)))
 
-        cal = self._calendar(now, HORIZON)
+        cal = self._calendar(now, self.horizon)
         self._store(i, obs, cal, prices[:known], co2s[:known])
         return i, n, cal, known
 
@@ -208,6 +220,9 @@ class BatteryAgent:
         if not np.isfinite(self.val["co2"][i]):
             self.val["co2"][i] = self._num(obs.get("co2_actual"), np.nan)
         tele = obs.get("noves_dades_5min") or {}
+        if i > 0:                                                      # weather of the hour that has just ended
+            for key, s in (("irradiancia_wm2", "irr"), ("temp_ambient_c", "tamb"), ("temp_panel_c", "tpan")):
+                self.val[s][i - 1] = self._num(tele.get(key), np.nan)
         load = self._num(tele.get("ultim_consum_kw"), np.nan)
         pv = self._num(tele.get("ultima_solar_kw"), np.nan)
         if i > 0 and np.isfinite(load) and load >= MIN_LOAD_KW:        # telemetry = the hour that has just ended
@@ -285,7 +300,68 @@ class BatteryAgent:
         elif np.isfinite(k_day):
             k += self.coef["pv"]["B"][:n, 0] * (k_day - kbar[0])
         res["pv"] = np.clip(k, 0.0, 1.15) * clear
+        if self.lgb is not None:
+            try:
+                self._lgb_apply(i, n, cal, known, f, res)
+            except Exception:                                          # any failure: keep the linear forecast
+                pass
         return res["price"], res["co2"], res["load"], res["pv"]
+
+    # ------------------------------------------------------------------ boosted residual forecasters (optional)
+    @staticmethod
+    def _load_lgb(model):
+        """Boosters stored as text beside this file (lgb_price/co2/load/pv.txt), enabled by model["lgb"] = true.
+        Returns {series: Booster} or None when disabled / lightgbm or a file is missing."""
+        if _lgb is None or not model.get("lgb"):
+            return None
+        try:
+            folder = Path(model["lgb_dir"]) if model.get("lgb_dir") else Path(__file__).parent
+            out = {s: _lgb.Booster(model_str=(folder / f"lgb_{s}.txt").read_text(encoding="utf-8"))
+                   for s in ("price", "co2", "load", "pv")}
+            return out
+        except Exception:
+            return None
+
+    def _lgb_features(self, i, n, cal, known, f, lin):
+        """Feature matrix (n leads x F) of each series: calendar, lead, weather of the last hour, what the agent has
+        measured this week (the linear model's own features f1/f2/f3) and the linear forecast itself.
+        Used both to fit the boosters (experiments/hard/lgb_build.py) and to apply them -> identical by construction."""
+        b0 = self.block_start
+        lo = max(b0, i - 24)
+        nan = float("nan")
+
+        def last(s):
+            return float(self.val[s][i - 1]) if i > 0 else nan
+
+        w24 = self.val["tamb"][lo:i]
+        w24 = w24[np.isfinite(w24)]
+        const = [float(cal["hour"][0]), min((i - b0) / 24.0, 7.0), last("tamb"), last("tpan"), last("irr"),
+                 float(w24.mean()) if len(w24) else nan]
+        for s in ("price", "co2", "load"):
+            const += [f[s][1], f[s][2]]
+        const += [f["pv"][2], f["pv"][3]]
+        common = [np.arange(n, dtype=float), cal["hour"][:n].astype(float), cal["month"][:n].astype(float),
+                  cal["loadtype"][:n].astype(float), f["pv"][1][:n], cal["clear"][:n]]
+        common += [np.full(n, c, dtype=float) for c in const]
+        out = {}
+        for s in ("price", "co2", "load"):
+            cols = common + [f[s][0][:n], lin[s][:n], f[s][3][:n], lin[s][:n] - f[s][0][:n]]
+            out[s] = np.column_stack(cols)
+        cols = common + [lin["pv"][:n], lin["pv"][:n] / np.maximum(cal["clear"][:n], 1.0)]
+        out["pv"] = np.column_stack(cols)
+        return out
+
+    def _lgb_apply(self, i, n, cal, known, f, res):
+        """Adds the boosted residual to the linear forecasts (market series only after the published hours)."""
+        X = self._lgb_features(i, n, cal, known, f, res)
+        d = {s: np.asarray(self.lgb[s].predict(X[s], num_threads=1), dtype=float) * self.lgb_w[s][:n] for s in X}
+        for s in ("price", "co2"):
+            d[s][:known] = 0.0
+        new = {"price": np.maximum(res["price"] + d["price"], 0.0), "co2": np.maximum(res["co2"] + d["co2"], 0.0),
+               "load": np.maximum(res["load"] + d["load"], 0.0),
+               "pv": np.clip(res["pv"] + d["pv"], 0.0, 1.15 * cal["clear"][:n])}
+        if all(np.all(np.isfinite(v)) for v in new.values()):
+            res.update(new)
 
     def _spread(self, n, cal):
         """Forecast-error scenarios of the net load, kW: (n hours, K equally likely scenarios)."""
@@ -299,10 +375,10 @@ class BatteryAgent:
         and returns p_0.  q(s) = marginal value of one stored kWh at state of charge s, propagated backwards:
         the expected marginal cost of a setpoint is a staircase (one step per scenario), and q of the previous
         hour is where that staircase crosses q of the next one (min over the steps of max(q shifted, step level))."""
-        grid = np.linspace(0.0, cap, N_GRID)
+        grid = np.linspace(0.0, cap, self.n_grid)
         up, down = pmax * ETA, pmax / ETA
         rank = np.arange(atoms.shape[1]) / atoms.shape[1]
-        q = np.full(N_GRID, -self.tv)      # value of stored energy after the horizon (0: nothing is worth storing)
+        q = np.full(self.n_grid, -self.tv)      # value of stored energy after the horizon (0: nothing is worth storing)
         for t in range(len(w) - 1, 0, -1):
             p = np.sort(np.clip(-atoms[t], -pmax, pmax))               # setpoint at which each scenario stops importing
             charging = p > 0
