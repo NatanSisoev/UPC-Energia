@@ -11,6 +11,33 @@ Goals: **1. best leaderboard score** (MODEL track) · **2. best demo/presentatio
 2. [WORKFLOW.md](WORKFLOW.md) — **mandatory** branch / merge / submission rules for the three of us and our agents.
 3. `docs/HANDOFF.md` — what teammates changed recently.
 
+## Which branch am I on? Work ONLY there, and do YOUR assignment
+
+Run `git branch --show-current` first. Your branch = your human. Commit and push directly to it (`git push origin <branch>`); never commit to `main` or to someone else's branch.
+Start every session with `git fetch origin && git merge origin/main`, then read `PLAN.md` and `docs/HANDOFF.md`.
+First time on this machine: set up the venv, `pip install -r requirements.txt`, and get the data (see `data/README.md`: official ZIP -> `data/train/`, `starter_kit/`), then `pytest`.
+
+### Branch `natan` — MODEL track: optimizer
+Owner of `agent/agent.py` and `experiments/oracle/`, `experiments/rule_v2/`, `experiments/mpc/`.
+1. Perfect-foresight LP/DP upper bound on whole-week blocks (what is the max achievable score, where does the gain come from).
+2. Rule-based v2 using the 24 h price+CO2 forecast (beat the template).
+3. MPC agent: each hour plan 24 h (LP via scipy HiGHS or DP over SOC) with known price/CO2 + forecast load/solar, apply first action, always through the safety clamp, <25 ms/step.
+4. Merge to `main` any verified better agent; run submissions (announce first).
+
+### Branch `aiman` — MODEL track: forecasting + data analysis
+Owner of `notebooks/`, `experiments/forecast/`, `agent/models/`.
+1. EDA notebook: load and solar by hour/weekday/month, train-vs-last-week-of-month drift, price/CO2 patterns, solar vs irradiance. Share key findings in `docs/HANDOFF.md` (Sami uses them for the demo).
+2. Forecasters for next-24 h load and solar using ONLY what the agent sees (`hour`, `day_of_week`, month, `noves_dades_5min`, `self.historial`): seasonal-naive -> ridge -> LightGBM. Validate by whole-week CV (MAE by horizon).
+3. Deliver a small `Forecaster` class with `predict(obs, history) -> (load_24h, pv_24h)` + `.pkl` (<5 MB), documented in `docs/HANDOFF.md`, so Natan's MPC can plug it in. Files go in `agent/models/`; keep imports within the allowed list.
+
+### Branch `sami` — DEMO track: frontend, story, presentation
+Owner of `demo/`.
+1. Pick the stack (Streamlit or static HTML/JS), build a skeleton that replays a week from `sim.simulate(agent, df).trace` (SOC, setpoint, grid import) with KPI cards (CO2 avoided, EUR saved, infractions).
+2. Data-insights page with real figures (price/CO2 daily profile, solar curve, demand by weekday) — use Aiman's EDA findings.
+3. Compare: no battery vs template baseline vs our best agent; optional what-if slider (CO2 vs cost weight).
+4. Slides + 3-minute pitch + fallback screen-recording. Story outline is in `PLAN.md`. Save result data to `demo/data/` and document the format in `docs/HANDOFF.md`.
+Sami's agent: you may read everything but only edit `demo/` (and `docs/HANDOFF.md` entries). Ask the model people for agent traces rather than editing `agent/` or `sim/`.
+
 ## Non-negotiables (summary — details in WORKFLOW.md)
 
 - Work **only on your human's branch** (`natan` / `aiman` / `sami`). Check `git branch --show-current` first.
