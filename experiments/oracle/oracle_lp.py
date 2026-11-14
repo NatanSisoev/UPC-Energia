@@ -16,11 +16,12 @@ from scipy.optimize import linprog
 from scipy.sparse import diags, eye, hstack, vstack
 
 from sim.data import load_campus_hourly, week_blocks
-from sim.simulator import ETA, CAPACITY, P_MAX, SOC_INIT, load_agent_class, simulate
+from sim.simulator import ETA, HARD, STANDARD, load_agent_class, simulate
 
 
-def oracle_run(df):
+def oracle_run(df, spec=STANDARD):
     """Returns (score, dCO2 %, dCost %) of the best possible schedule for the whole dataframe."""
+    CAPACITY, P_MAX, SOC_INIT = spec.capacity, spec.power, spec.soc_init
     n = len(df)
     load, pv = df["load_kw"].values, df["pv_kw"].values
     price, co2 = df["precio_eur_per_kwh"].values, df["co2_kg_per_kwh"].values
@@ -51,16 +52,19 @@ oracle_week = oracle_run                               # backwards-compatible na
 
 
 if __name__ == "__main__":
-    agent_path = sys.argv[1] if len(sys.argv) > 1 else "agent/agent.py"
-    df = load_campus_hourly()
+    hard = "--hard" in sys.argv
+    spec = HARD if hard else STANDARD
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    agent_path = args[0] if args else ("agent_hard/agent.py" if hard else "agent/agent.py")
+    df = load_campus_hourly(hard=hard)
     cls = load_agent_class(agent_path)
-    o, a = oracle_run(df), simulate(cls(), df)
+    o, a = oracle_run(df, spec), simulate(cls(), df, spec=spec)
     print(f"WHOLE TRAIN SET ({len(df)} h, one run): oracle={o[0]:.3f} (CO2 {o[1]:.2f}%, cost {o[2]:.2f}%)  "
           f"agent={a.score:.3f} (CO2 {a.d_co2_pct:.2f}%, cost {a.d_cost_pct:.2f}%)  -> {100 * a.score / o[0]:.2f} % "
           f"of the bound, violations={a.violations}")
     rows = []
     for wk in week_blocks(df):
-        o, a = oracle_run(wk), simulate(cls(), wk)
+        o, a = oracle_run(wk, spec), simulate(cls(), wk, spec=spec)
         rows.append((o[0], a.score, a.violations))
         print(f"{wk.index[0].date()}  oracle={o[0]:6.2f}  agent={a.score:6.2f}  ({100 * a.score / o[0]:5.1f} %)")
     r = np.array(rows)

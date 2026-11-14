@@ -24,6 +24,27 @@ VIOLATION_PENALTY = 0.20   # official environment.py: 0.002 of score fraction = 
 TOL = 1e-3
 
 
+@dataclass(frozen=True)
+class Spec:
+    """Scenario of the evaluation. STANDARD = the original challenge; HARD = "Mode Dificil" (site tab, 2026-11-14):
+    3x battery, only 3 known hours of price/CO2 (current hour + 2), weather telemetry of the previous hour and the
+    battery size inside the observation. The 12x solar plant of Hard Mode is applied to the DATA
+    (sim.data.load_campus_hourly(hard=True)), exactly like the organisers' snippet does."""
+    capacity: float = CAPACITY
+    power: float = P_MAX
+    horizon: int = 24
+    hard: bool = False
+
+    @property
+    def soc_init(self) -> float:
+        return 0.5 * self.capacity
+
+
+STANDARD = Spec()
+HARD = Spec(capacity=6000.0, power=1500.0, horizon=3, hard=True)
+WEATHER_COLS = ("irradiancia_wm2", "temp_ambient_c", "temp_panel_c", "vent_ms")
+
+
 @dataclass
 class Result:
     score: float
@@ -48,35 +69,42 @@ def _grid_metrics(load, pv, setpoint, price, co2):
     return float((imp * co2).sum()), float((imp * price).sum() - (exp * EXPORT_PRICE).sum())
 
 
-def _future(df: pd.DataFrame, i: int, col: str) -> list:
-    """Known values for the next 24 simulation steps, exactly as the official environment.py builds them:
+def _future(df: pd.DataFrame, i: int, col: str, horizon: int = 24) -> list:
+    """Known values for the next `horizon` simulation steps, exactly as the official environment.py builds them:
     the list STARTS AT THE CURRENT HOUR (element 0 == preu_actual / co2_actual) and is truncated, not padded,
-    when fewer than 24 steps remain."""
-    return df[col].iloc[i:i + 24].tolist()
+    when fewer than `horizon` steps remain."""
+    return df[col].iloc[i:i + horizon].tolist()
 
 
-def build_obs(df: pd.DataFrame, i: int, soc: float) -> dict:
+def build_obs(df: pd.DataFrame, i: int, soc: float, spec: Spec = STANDARD) -> dict:
     row = df.iloc[i]
     prev = df.iloc[i - 1] if i > 0 else row
     ts = df.index[i]
-    return {
+    obs = {
         "timestamp": ts, "hour": int(ts.hour), "day_of_week": int(ts.day_of_week),
-        "soc_kwh": float(soc), "soc_percent": 100.0 * soc / CAPACITY, "soc_pct": soc / CAPACITY,
+        "soc_kwh": float(soc), "soc_percent": 100.0 * soc / spec.capacity, "soc_pct": soc / spec.capacity,
         "preu_actual": float(row["precio_eur_per_kwh"]), "co2_actual": float(row["co2_kg_per_kwh"]),
-        "preus_properes_24h": _future(df, i, "precio_eur_per_kwh"),
-        "co2_properes_24h": _future(df, i, "co2_kg_per_kwh"),
+        "preus_properes_24h": _future(df, i, "precio_eur_per_kwh", spec.horizon),
+        "co2_properes_24h": _future(df, i, "co2_kg_per_kwh", spec.horizon),
         "noves_dades_5min": {"ultim_consum_kw": float(prev["load_kw"]), "ultima_solar_kw": float(prev["pv_kw"])},
     }
+    if spec.hard:
+        obs["cap_max_kwh"], obs["power_max_kw"] = spec.capacity, spec.power
+        for col in WEATHER_COLS:                       # readings of the previous hour, like load and solar
+            if col in df.columns:
+                obs["noves_dades_5min"][col] = float(prev[col])
+    return obs
 
 
-def simulate(agent, df: pd.DataFrame, penalty: float = VIOLATION_PENALTY) -> Result:
-    soc = SOC_INIT
+def simulate(agent, df: pd.DataFrame, penalty: float = VIOLATION_PENALTY, spec: Spec = STANDARD) -> Result:
+    CAPACITY, P_MAX = spec.capacity, spec.power        # shadow the standard-mode module constants
+    soc = spec.soc_init
     n = len(df)
     sp = np.zeros(n)
     socs = np.zeros(n)
     viol = 0
     for i in range(n):
-        req = float(agent.act(build_obs(df, i, soc)))
+        req = float(agent.act(build_obs(df, i, soc, spec)))
         max_c = min(P_MAX, (CAPACITY - soc) / ETA)
         max_d = min(P_MAX, soc * ETA)
         if not np.isfinite(req):
