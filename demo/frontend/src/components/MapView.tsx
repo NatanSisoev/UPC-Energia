@@ -167,6 +167,7 @@ export default function MapView() {
           {
             snap: s,
             phase: (now / 3200) % 1,
+            clock: now / 1000,
             version: st.version,
             solar: st.solar,
             panel: st.panelModel,

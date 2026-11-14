@@ -29,6 +29,10 @@ Key points:
 
 Regenerate `replay.json` whenever `agent/agent.py` or `sim/` changes: the TS port must then be updated too, and `validate.ts` must be green.
 
+## Presenting
+
+`P` (or ▶ Pitch) runs the 3-minute automatic tour, `M` (or 🎤) the keyboard-driven presenter mode; 📊 Insights has the data figures. `npm run build && npx vite preview` works fully offline. Details: [`frontend/HANDOFF.md`](frontend/HANDOFF.md).
+
 ## Story the demo must support (see PLAN.md)
 
 1. Problem and stakes → 2. what the data says (CO2/price peaks, solar surplus) → 3. strategy (forecast + 24 h optimisation, zero infractions) →

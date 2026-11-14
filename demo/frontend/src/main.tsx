@@ -13,7 +13,7 @@ createRoot(document.getElementById('root')!).render(
 
 // dev-only handles for browser debugging / scripted verification
 if (import.meta.env.DEV) {
-  void Promise.all([import('./store/useSim'), import('./pitch/usePitch'), import('./pitch/script')]).then(([a, b, c]) => {
-    (window as unknown as Record<string, unknown>).__app = { useSim: a.useSim, usePitch: b.usePitch, SCENES: c.SCENES };
+  void Promise.all([import('./store/useSim'), import('./pitch/usePitch'), import('./pitch/script'), import('./components/MapView')]).then(([a, b, c, d]) => {
+    (window as unknown as Record<string, unknown>).__app = { useSim: a.useSim, usePitch: b.usePitch, SCENES: c.SCENES, camera: d.camera };
   });
 }

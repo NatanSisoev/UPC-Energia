@@ -14,6 +14,7 @@ import {
   hull,
   inside,
   lonlat3,
+  lonlatRing,
   normRing,
   offsetRing,
   rect,
@@ -93,6 +94,13 @@ export interface World {
   roadCasing: Array<{ path: number[][]; w: number; color: RGB }>;
   roadAsphalt: Array<{ path: number[][]; w: number; color: RGB }>;
   roadMarks: Array<{ path: number[][] }>;
+  /** pitch mowing stripes, line markings and running tracks (flat, lon/lat polygons) */
+  pitchMarks: Array<{ polygon: number[][][]; color: RGB }>;
+  /** street lamps (lon, lat) */
+  lamps: Array<{ pos: number[] }>;
+  /** roads cars drive on (local metres, cumulative length) and the cars themselves */
+  carRoads: Array<{ pts: P2[]; cum: number[]; len: number; w: number }>;
+  cars: Array<{ road: number; off: number; v: number; lane: number; dir: 1 | -1; color: RGB }>;
   context: PolyItem[];
   trees: Array<{ trunk: PolyItem; crown: PolyItem; crown2: PolyItem }>;
   plinths: PolyItem[];
@@ -122,6 +130,180 @@ export interface World {
 
 const poly = (outer: P2[], z: number, holes: P2[][] = []): number[][][] => [lonlat3(outer, z), ...holes.map((h) => lonlat3(h, z))];
 
+/** Rounded-rectangle ("stadium") outline: running tracks. Local metres, long axis along x before rotation. */
+function stadium(cx: number, cy: number, len: number, wid: number, ang: number, n = 14): P2[] {
+  const r = wid / 2;
+  const s = Math.max(0, len / 2 - r);
+  const pts: P2[] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = -Math.PI / 2 + (i / n) * Math.PI;
+    pts.push([s + r * Math.cos(a), r * Math.sin(a)]);
+  }
+  for (let i = 0; i <= n; i++) {
+    const a = Math.PI / 2 + (i / n) * Math.PI;
+    pts.push([-s + r * Math.cos(a), r * Math.sin(a)]);
+  }
+  const c = Math.cos(ang);
+  const sn = Math.sin(ang);
+  return pts.map(([x, y]): P2 => [cx + x * c - y * sn, cy + x * sn + y * c]);
+}
+
+/**
+ * Deterministic ground dressing, all derived from the OSM ground data: striped pitches with line markings and
+ * running tracks, street lamps along roads, and the cars (positions are animated per frame in buildLayers).
+ */
+function decorateGround(W: World, ground: GroundData, allRings: P2[][]): void {
+  const flat = (ring: P2[]) => lonlatRing(ring).map((q) => [q[0], q[1]]);
+  const inBuilding = (p: P2) => allRings.some((r) => inside(p, r));
+
+  // ---- pitches
+  ground.greens.forEach((g, gi) => {
+    if (g.k !== 'pitch') return;
+    const loc = g.p.map(toLocal);
+    let best = 0;
+    let ang = 0;
+    for (let i = 0; i < loc.length; i++) {
+      const a = loc[i];
+      const b = loc[(i + 1) % loc.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L > best) {
+        best = L;
+        ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      }
+    }
+    const ca = Math.cos(ang);
+    const sa = Math.sin(ang);
+    const rot = loc.map(([x, y]): P2 => [x * ca + y * sa, -x * sa + y * ca]);
+    const xs = rot.map((q) => q[0]);
+    const ys = rot.map((q) => q[1]);
+    const x0 = Math.min(...xs);
+    const x1 = Math.max(...xs);
+    const y0 = Math.min(...ys);
+    const y1 = Math.max(...ys);
+    let w = x1 - x0;
+    let h = y1 - y0;
+    if (w < h) [w, h] = [h, w]; // keep the long axis first (rotation below follows the longest edge anyway)
+    if (w * h < 300) return;
+    const back = (x: number, y: number): P2 => [x * ca - y * sa, x * sa + y * ca];
+    const [cx, cy] = back((x0 + x1) / 2, (y0 + y1) / 2);
+    const W0 = x1 - x0;
+    const H0 = y1 - y0;
+    const push = (ring: P2[], color: RGB) => W.pitchMarks.push({ polygon: [flat(ring)], color });
+    // mowing stripes
+    const n = Math.max(4, Math.round(W0 / 4.5));
+    // (each stripe is cut to the pitch outline: y-extent of the polygon at the stripe's x)
+    const yRange = (sx: number): [number, number] | null => {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let k = 0; k < rot.length; k++) {
+        const a = rot[k];
+        const b = rot[(k + 1) % rot.length];
+        if ((a[0] - sx) * (b[0] - sx) > 0 || a[0] === b[0]) continue;
+        const y = a[1] + ((b[1] - a[1]) * (sx - a[0])) / (b[0] - a[0]);
+        lo = Math.min(lo, y);
+        hi = Math.max(hi, y);
+      }
+      return hi - lo > 2 ? [lo + 0.5, hi - 0.5] : null;
+    };
+    for (let i = 0; i < n; i += 2) {
+      const sx = x0 + ((i + 0.5) * W0) / n;
+      const yr = yRange(sx);
+      if (!yr) continue;
+      const [px, py] = back(sx, (yr[0] + yr[1]) / 2);
+      push(rect(px, py, W0 / n, yr[1] - yr[0], ang), [112 + hashInt(`${gi}s${i}`, 6), 202, 96]);
+    }
+    // markings: touchlines, goal lines, halfway line, centre circle
+    const line = (ax: number, ay: number, bx: number, by: number) => {
+      const [mx, my] = back((ax + bx) / 2, (ay + by) / 2);
+      push(rect(mx, my, Math.max(0.3, Math.abs(bx - ax)), Math.max(0.3, Math.abs(by - ay)), ang), [236, 242, 232]);
+    };
+    const ix = Math.min(1.6, W0 * 0.04);
+    const iy = Math.min(1.6, H0 * 0.04);
+    const lw = 0.32;
+    line(x0 + ix, y0 + iy, x1 - ix, y0 + iy + lw);
+    line(x0 + ix, y1 - iy - lw, x1 - ix, y1 - iy);
+    line(x0 + ix, y0 + iy, x0 + ix + lw, y1 - iy);
+    line(x1 - ix - lw, y0 + iy, x1 - ix, y1 - iy);
+    const mxr = (x0 + x1) / 2;
+    line(mxr - lw / 2, y0 + iy, mxr + lw / 2, y1 - iy);
+    if (W0 * H0 > 1500) {
+      const ring = (r: number, k: number): P2[] => {
+        const c0 = back(mxr, (y0 + y1) / 2);
+        return regular(c0[0], c0[1], r, 28, ang + k);
+      };
+      const rr = Math.min(H0 * 0.16, 9.15);
+      W.pitchMarks.push({ polygon: [flat(ring(rr, 0)), flat(ring(rr - lw, 0))], color: [236, 242, 232] });
+    }
+    // running track around the big grounds (only if it stays clear of buildings)
+    if (W0 > 70 && H0 > 28) {
+      const outer = stadium(cx, cy, W0 + 22, H0 + 22, ang);
+      const inner = stadium(cx, cy, W0 + 2, H0 + 2, ang);
+      if (!outer.some((p) => inBuilding(p))) {
+        W.pitchMarks.push({ polygon: [flat(outer), flat(inner)], color: [188, 92, 70] });
+        for (let l = 1; l < 4; l++) {
+          const o = stadium(cx, cy, W0 + 2 + l * 6.4 + 0.3, H0 + 2 + l * 6.4 + 0.3, ang);
+          const i2 = stadium(cx, cy, W0 + 2 + l * 6.4, H0 + 2 + l * 6.4, ang);
+          W.pitchMarks.push({ polygon: [flat(o), flat(i2)], color: [238, 226, 214] });
+        }
+      }
+    }
+  });
+
+  // ---- street lamps and cars
+  let carBudget = 80;
+  ground.roads.forEach((r, ri) => {
+    if (r.w < 4) return;
+    const loc = r.p.map(toLocal);
+    const cum = [0];
+    for (let i = 1; i < loc.length; i++) cum.push(cum[i - 1] + Math.hypot(loc[i][0] - loc[i - 1][0], loc[i][1] - loc[i - 1][1]));
+    const len = cum[cum.length - 1];
+    if (len < 30) return;
+    // lamps every ~32 m, alternating sides
+    if (W.lamps.length < 900) {
+      let side = 1;
+      for (let s = 12; s < len; s += 32) {
+        const [p, d] = pointAlong(loc, cum, s);
+        const off = r.w / 2 + 1.6;
+        const q: P2 = [p[0] - d[1] * off * side, p[1] + d[0] * off * side];
+        side = -side;
+        if (!inBuilding(q)) W.lamps.push({ pos: toLonLat(q) });
+      }
+    }
+    // cars on the wider carriageways
+    if (r.w >= 6 && carBudget > 0 && len >= 60) {
+      const idx = W.carRoads.length;
+      W.carRoads.push({ pts: loc, cum, len, w: r.w });
+      const k = Math.min(carBudget, 1 + Math.floor(len / 70));
+      for (let c = 0; c < k; c++) {
+        const dir = hash(`cd${ri}${c}`) < 0.5 ? 1 : -1;
+        W.cars.push({
+          road: idx,
+          off: hash(`co${ri}${c}`) * len,
+          v: 5 + hash(`cv${ri}${c}`) * 5,
+          lane: (dir === 1 ? 1 : -1) * Math.max(1.2, r.w * 0.22),
+          dir,
+          color: CAR_COLORS[Math.floor(hash(`cc${ri}${c}`) * CAR_COLORS.length)],
+        });
+      }
+      carBudget -= k;
+    }
+  });
+}
+
+const CAR_COLORS: RGB[] = [[232, 232, 236], [40, 44, 56], [200, 48, 52], [60, 110, 200], [236, 190, 60], [120, 126, 138]];
+const hashInt = (seed: string, span: number) => Math.round(hash(seed) * span);
+
+/** Point and unit direction at distance s along a polyline with cumulative lengths. */
+function pointAlong(pts: P2[], cum: number[], s: number): [P2, P2] {
+  let i = 1;
+  while (i < cum.length - 1 && cum[i] < s) i++;
+  const a = pts[i - 1];
+  const b = pts[i];
+  const L = Math.max(1e-9, cum[i] - cum[i - 1]);
+  const u = Math.min(1, Math.max(0, (s - cum[i - 1]) / L));
+  return [[a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u], [(b[0] - a[0]) / L, (b[1] - a[1]) / L]];
+}
+
 // ---------------------------------------------------------- the build ---
 
 export function buildWorld(campus: CampusData, ground: GroundData): World {
@@ -149,6 +331,10 @@ export function buildWorld(campus: CampusData, ground: GroundData): World {
     roadCasing: [],
     roadAsphalt: [],
     roadMarks: [],
+    pitchMarks: [],
+    lamps: [],
+    carRoads: [],
+    cars: [],
     context: [],
     trees: [],
     plinths: [],
@@ -232,6 +418,8 @@ export function buildWorld(campus: CampusData, ground: GroundData): World {
       W.roadAsphalt.push({ path: pts, w: r.w, color: path });
     }
   }
+
+  decorateGround(W, ground, allRings);
 
   // ---- context buildings (neighbourhood)
   for (const c of ground.context) {
@@ -454,6 +642,8 @@ function geoRot(ring: P2[], a: number): P2[] {
 export interface Frame {
   snap: Snapshot | null;
   phase: number; // 0..1 cable pulse phase
+  /** wall-clock seconds (visual animation only: cars) */
+  clock: number;
   version: number;
   solar: Record<string, SolarCfg>;
   panel: PanelModelId;
@@ -638,7 +828,90 @@ export function buildLayers(W: World, f: Frame, onHover: (id: string | null, x: 
       parameters: FLAT,
       updateTriggers: { getColor: [kq] },
     }),
+    new SolidPolygonLayer({
+      id: 'pitch-marks',
+      data: W.pitchMarks,
+      getPolygon: (d: { polygon: number[][][] }) => d.polygon as never,
+      getFillColor: (d: { color: RGB }) => rgba(shade(d.color, day)) as never,
+      parameters: FLAT,
+      updateTriggers: { getFillColor: [kq] },
+    }),
   );
+
+  // --- cars (animated by wall clock) and street lamps (lit after dusk)
+  {
+    const night = 1 - day;
+    const cars: Array<{ pos: number[]; color: RGB; head: number[] }> = [];
+    for (const c of W.cars) {
+      const road = W.carRoads[c.road];
+      const s0 = (c.off + c.v * f.clock) % road.len;
+      const s = c.dir === 1 ? s0 : road.len - s0;
+      const [p, d] = pointAlong(road.pts, road.cum, s);
+      const q: P2 = [p[0] - d[1] * c.lane, p[1] + d[0] * c.lane];
+      const ahead: P2 = [q[0] + d[0] * c.dir * 2.6, q[1] + d[1] * c.dir * 2.6];
+      cars.push({ pos: toLonLat(q), color: c.color, head: toLonLat(ahead) });
+    }
+    layers.push(
+      new ScatterplotLayer({
+        id: 'cars',
+        data: cars,
+        getPosition: (d: { pos: number[] }) => d.pos as never,
+        getRadius: 2.3,
+        radiusUnits: 'meters',
+        getFillColor: (d: { color: RGB }) => [...shade(d.color, Math.max(0.35, day)), 255] as never,
+        parameters: FLAT,
+        updateTriggers: { getFillColor: [kq] },
+      }),
+    );
+    if (night > 0.25) {
+      layers.push(
+        new ScatterplotLayer({
+          id: 'headlights',
+          data: cars,
+          getPosition: (d: { head: number[] }) => d.head as never,
+          getRadius: 2.6,
+          radiusUnits: 'meters',
+          getFillColor: [255, 236, 170, Math.round(150 * night)] as never,
+          parameters: FLAT,
+          updateTriggers: { getFillColor: [kq] },
+        }),
+      );
+    }
+    if (night > 0.2) {
+      layers.push(
+        new ScatterplotLayer({
+          id: 'lamp-pools',
+          data: W.lamps,
+          getPosition: (d: { pos: number[] }) => d.pos as never,
+          getRadius: 12,
+          radiusUnits: 'meters',
+          getFillColor: [255, 196, 96, Math.round(15 * night)] as never,
+          parameters: FLAT,
+          updateTriggers: { getFillColor: [kq] },
+        }),
+        new ScatterplotLayer({
+          id: 'lamp-pools-core',
+          data: W.lamps,
+          getPosition: (d: { pos: number[] }) => d.pos as never,
+          getRadius: 6,
+          radiusUnits: 'meters',
+          getFillColor: [255, 204, 110, Math.round(34 * night)] as never,
+          parameters: FLAT,
+          updateTriggers: { getFillColor: [kq] },
+        }),
+        new ScatterplotLayer({
+          id: 'lamp-cores',
+          data: W.lamps,
+          getPosition: (d: { pos: number[] }) => d.pos as never,
+          getRadius: 1.1,
+          radiusUnits: 'meters',
+          getFillColor: [255, 238, 190, Math.round(255 * Math.min(1, night * 1.4))] as never,
+          parameters: FLAT,
+          updateTriggers: { getFillColor: [kq] },
+        }),
+      );
+    }
+  }
 
   // --- underground cable trenches (drawn into the street surface, below everything standing)
   const cableLayers = () => {
