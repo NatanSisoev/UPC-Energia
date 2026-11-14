@@ -135,3 +135,12 @@ Models (plan-covered): `glm5.3-flash`, `deepseek-v4-flash`, `qwen3.6`, `gemma4`;
 - Future price/CO2 lists are **truncated** (not padded) at the end of a test block.
 - Our `sim/simulator.py` matches the official env (see `tests/test_vs_official.py`). Baseline heuristic on the full train set: **score ≈ 1.27**, so realistic scores are small numbers; improvements must be measured on whole weeks.
 - Hidden test: `data/test_hidden/`, last 7 days of each of 12 months = 2,016 h.
+
+## Extra details from the official kit docs (`docs/official/`)
+
+- Train CSV range: 2025-09-01 → 2026-09-01 (price/CO2 files have 6,768 h; hourly merged table with load+pv has ~5,993 h because the last 7 days of each month are removed for the hidden test).
+- ENUNCIAT says SOC0 = 50 % "at the start of each evaluation period"; the FAQ says only at hour 0 of the whole simulation. Unknown whether each test week restarts at 50 % → don't rely on carry-over SOC across weeks.
+- Failed submissions (syntax error, missing class) do **not** consume quota.
+- AST scanner is broader than listed on the web page: also forbids `http`, `gc`, `builtins`, `signal`, `threading`, `multiprocessing`, `globals()/locals()/vars()/compile()/breakpoint()`, and attributes like `__code__`, `__globals__`, `f_back`. `sys.exit()` is forbidden. `pickle`, `functools`, `heapq`, `bisect`, `re`, `copy`, `dataclasses` are fine. `sim/check.py` now mirrors the official scanner.
+- The hidden-test path is off limits: do not try to read `data/test_hidden` or embed test-week data; the jury audits code.
+- Official helper: `python starter_kit/check_submission.py agent.py` (24-step smoke test) — run it as well as `python -m sim.check`.
