@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Deck, MapView as DeckMapView, LightingEffect, AmbientLight, DirectionalLight, FlyToInterpolator } from '@deck.gl/core';
+import { Deck, MapView as DeckMapView, LightingEffect, AmbientLight, DirectionalLight, FlyToInterpolator, LinearInterpolator } from '@deck.gl/core';
 import { useSim } from '../store/useSim';
 import { buildWorld, buildLayers, dayLevel, roofColor, type World } from '../scene/world';
 import { fmtKw } from '../lib/format';
@@ -12,7 +12,7 @@ import { fmtKw } from '../lib/format';
 
 export { roofColor as categoryColor };
 
-interface ViewState {
+export interface ViewState {
   longitude: number;
   latitude: number;
   zoom: number;
@@ -22,14 +22,20 @@ interface ViewState {
   transitionInterpolator?: unknown;
 }
 
-const HOME: ViewState = { longitude: 2.1146, latitude: 41.3868, zoom: 16.05, pitch: 52, bearing: -18 };
+export const HOME: ViewState = { longitude: 2.1146, latitude: 41.3868, zoom: 16.05, pitch: 52, bearing: -18 };
 export const CAMERA_PRESETS: Record<string, Partial<ViewState>> = {
   home: HOME,
   battery: { longitude: 2.117, latitude: 41.3853, zoom: 18.4, pitch: 58, bearing: -30 },
   substation: { longitude: 2.11755, latitude: 41.3857, zoom: 18.4, pitch: 58, bearing: 20 },
   top: { ...HOME, pitch: 0, bearing: 0, zoom: 16 },
 };
-export const camera = { fly: (_k: string): void => {}, rotate: (_deg: number): void => {}, tilt: (_deg: number): void => {} };
+export const camera = {
+  fly: (_k: string): void => {},
+  rotate: (_deg: number): void => {},
+  tilt: (_deg: number): void => {},
+  /** scripted move to an arbitrary view: 'linear' = constant-speed cinematic drift, 'fly' = swooping jump (ms = 0 -> instant) */
+  go: (_v: Partial<ViewState>, _ms: number, _mode?: 'linear' | 'fly'): void => {},
+};
 
 const mix3 = (a: number[], b: number[], t: number) => a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',');
 
@@ -86,6 +92,16 @@ export default function MapView() {
     camera.fly = (k: string) => {
       const target = CAMERA_PRESETS[k] ?? HOME;
       viewRef.current = { ...viewRef.current, ...target, transitionDuration: 1600, transitionInterpolator: new FlyToInterpolator({ speed: 1.4 }) };
+      deck.setProps({ viewState: viewRef.current } as never);
+    };
+
+    camera.go = (v, ms, mode = 'linear') => {
+      viewRef.current = {
+        ...viewRef.current,
+        ...v,
+        transitionDuration: ms,
+        transitionInterpolator: mode === 'fly' ? new FlyToInterpolator({ speed: 1.4 }) : new LinearInterpolator(['longitude', 'latitude', 'zoom', 'pitch', 'bearing']),
+      };
       deck.setProps({ viewState: viewRef.current } as never);
     };
 

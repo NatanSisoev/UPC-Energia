@@ -96,6 +96,15 @@ const ALPHA_CO2 = 0.7;
 const BETA_COST = 0.3;
 const NET_MARGIN_KW = 50;
 
+/** Optional strategy knobs for what-if studies. Defaults reproduce agent/agent.py exactly. */
+export interface MpcOptions {
+  /** weight of CO2 vs cost inside the optimiser (challenge score is 0.7/0.3) */
+  alphaCo2?: number;
+  betaCost?: number;
+  /** look-ahead hours of price/CO2 the agent may use (the challenge provides 24) */
+  horizon?: number;
+}
+
 export class MpcAgent {
   private readonly grid: Float64Array;
   private readonly step: number;
@@ -109,8 +118,12 @@ export class MpcAgent {
   lastReason: Reason = { action: 'hold', rank: 0.5, priceVsMean: 0, co2VsMean: 0, guard: false };
 
   private readonly spec: BatterySpec;
+  private readonly alpha: number;
+  private readonly beta: number;
 
-  constructor(spec: BatterySpec) {
+  constructor(spec: BatterySpec, opts: MpcOptions = {}) {
+    this.alpha = opts.alphaCo2 ?? ALPHA_CO2;
+    this.beta = opts.betaCost ?? BETA_COST;
     this.spec = spec;
     // Python uses a 1 kWh grid for 2,000 kWh; keep ~2,000 nodes for any other size.
     this.step = Math.max(spec.capacityKwh / 2000, 0.05);
@@ -212,7 +225,7 @@ export class MpcAgent {
       co2Base += this.co2Obs[m] + left * CO2_RATE[m];
       costBase += this.costObs[m] + left * COST_RATE[m];
     }
-    return [ALPHA_CO2 / Math.max(co2Base, 1e-9), BETA_COST / Math.max(costBase, 1e-9)];
+    return [this.alpha / Math.max(co2Base, 1e-9), this.beta / Math.max(costBase, 1e-9)];
   }
 
   /** np.interp on the uniform SOC grid with explicit out-of-range values. */
@@ -319,12 +332,13 @@ export interface SimResult {
 }
 
 /** Re-implementation of sim.simulator.simulate() for one whole-week block. */
-export function simulateWeek(week: WeekInput, spec: BatterySpec, kind: AgentKind): SimResult {
+export function simulateWeek(week: WeekInput, spec: BatterySpec, kind: AgentKind, opts: MpcOptions = {}): SimResult {
   const n = week.load.length;
   const t0 = startMs(week.start);
   const price = Float64Array.from(week.price as ArrayLike<number>);
   const co2 = Float64Array.from(week.co2 as ArrayLike<number>);
-  const mpc = kind === 'mpc' ? new MpcAgent(spec) : null;
+  const mpc = kind === 'mpc' ? new MpcAgent(spec, opts) : null;
+  const look = opts.horizon ?? 24;
 
   const sp = new Float64Array(n);
   const socStart = new Float64Array(n);
@@ -343,8 +357,8 @@ export function simulateWeek(week: WeekInput, spec: BatterySpec, kind: AgentKind
       socKwh: soc,
       priceNow: price[i],
       co2Now: co2[i],
-      prices: price.subarray(i, i + 24),
-      co2s: co2.subarray(i, i + 24),
+      prices: price.subarray(i, i + look),
+      co2s: co2.subarray(i, i + look),
       lastLoad: week.load[prevI],
       lastPv: week.pv[prevI],
     };

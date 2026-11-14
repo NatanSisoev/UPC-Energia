@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router';
-import { BarChart3, Layers, Sun, X, Eye } from 'lucide-react';
+import { BarChart3, Layers, Sun, X, Eye, Presentation, Play } from 'lucide-react';
+import { usePitch } from '../pitch/usePitch';
 import { useSim } from '../store/useSim';
 import { camera } from './MapView';
 import { Slider, Toggle } from './ui';
@@ -27,6 +28,7 @@ export default function Controls() {
   const navigate = useNavigate();
   const loc = useLocation();
   const dash = loc.pathname === '/dashboard';
+  const insights = loc.pathname === '/insights';
   const st = useSim.getState();
 
   const hourNow = snap ? new Date((snap.tMin % 1440) * 60_000).getUTCHours() + new Date((snap.tMin % 1440) * 60_000).getUTCMinutes() / 60 : 12;
@@ -120,6 +122,15 @@ export default function Controls() {
         </button>
         <button type="button" className={`btn !rounded-[16px] !py-2.5 ${dash ? 'btn-on' : ''}`} style={{ '--accent': '#ff9f5c' } as React.CSSProperties} onClick={() => navigate(dash ? '/' : '/dashboard')}>
           {dash ? <X size={16} /> : <BarChart3 size={16} />} {dash ? 'Close charts' : 'Charts'}
+        </button>
+        <button type="button" className={`btn !rounded-[16px] !py-2.5 ${insights ? 'btn-on' : ''}`} style={{ '--accent': '#a6e05a' } as React.CSSProperties} onClick={() => navigate(insights ? '/' : '/insights')} title="Real figures from the data and the agent">
+          {insights ? <X size={16} /> : <span>📊</span>} {insights ? 'Close' : 'Insights'}
+        </button>
+        <button type="button" className="btn btn-on !rounded-[16px] !py-2.5" style={{ '--accent': '#ff6b8a' } as React.CSSProperties} onClick={() => usePitch.getState().start('auto')} title="3-minute guided pitch (P)">
+          <Play size={16} /> Pitch
+        </button>
+        <button type="button" className="btn !rounded-[16px] !px-2.5 !py-2.5" onClick={() => usePitch.getState().start('presenter')} title="Presenter mode: keyboard-driven scenes (M)" aria-label="Presenter mode">
+          <Presentation size={16} />
         </button>
       </div>
     </div>

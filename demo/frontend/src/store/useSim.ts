@@ -81,6 +81,7 @@ interface SimStore {
   setAgent: (a: AgentKind) => void;
   setUnderground: (v: boolean) => void;
   toggleLayer: (id: LayerId) => void;
+  setLayers: (patch: Partial<Record<LayerId, boolean>>) => void;
   setSunLock: (h: number | null) => void;
   select: (id: string | null) => void;
   setPanelModel: (id: PanelModelId) => void;
@@ -160,6 +161,7 @@ export const useSim = create<SimStore>((set, get) => ({
   },
   setUnderground: (v) => set({ underground: v }),
   toggleLayer: (id) => set((s) => ({ layers: { ...s.layers, [id]: !s.layers[id] } })),
+  setLayers: (patch) => set((s) => ({ layers: { ...s.layers, ...patch } })),
   setSunLock: (h) => {
     set({ sunLock: h });
     set({ snap: derived.current ? snapshotAt(get(), get().tMin) : null });

@@ -10,3 +10,10 @@ createRoot(document.getElementById('root')!).render(
     <RouterProvider router={router} />
   </StrictMode>,
 );
+
+// dev-only handles for browser debugging / scripted verification
+if (import.meta.env.DEV) {
+  void Promise.all([import('./store/useSim'), import('./pitch/usePitch'), import('./pitch/script')]).then(([a, b, c]) => {
+    (window as unknown as Record<string, unknown>).__app = { useSim: a.useSim, usePitch: b.usePitch, SCENES: c.SCENES };
+  });
+}
