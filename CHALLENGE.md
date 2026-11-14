@@ -26,7 +26,7 @@ campus battery over **12 weeks of the year (2,016 hours)**. Objective weights:
 Grid power (kW) = campus demand − solar generation + battery setpoint
 setpoint > 0 : charging (draws energy);  setpoint < 0 : discharging (feeds campus)
 Grid > 0 : campus buys at PVPC price, emits CO2 per grid mix
-Grid < 0 : surplus solar exported at compensation price 0.04 €/kWh (page text) — charge the battery with it instead
+Grid < 0 : surplus exported; official `environment.py` uses export_price = 0.0 (page text mentions 0.04) — charge the battery with it instead
 ```
 
 Rule of thumb: cycling only pays if the expensive/dirty hour is ≥ 11.1 % (1/0.9) worse than the cheap/clean hour you charged in.
@@ -72,7 +72,7 @@ return float(np.clip(consigna, -max_descarrega, max_carrega))
 Score = max(0, 0.70·ΔCO2(%) + 0.30·ΔCost(%) − 0.20·Infractions)
 ```
 - ΔCO2 / ΔCost: % reduction vs. the **same campus without battery**.
-- Infraction: each hour with physical clipping / limit violation. **Page formula says −0.20 per infraction, the FAQ says −1.00** → unknown which; assume the worst and aim for **0 infractions**.
+- Infraction: each physical clipping / limit violation. **Sources disagree**: web page formula −0.20, FAQ and `docs/official/ENUNCIAT.md` −1.00, official `starter_kit/environment.py` 0.002 of the score fraction (= 0.2 points). Assume the worst and keep **0 infractions**.
 - Tie-break: higher score → fewer infractions → earlier registration time.
 - **Jury** weighs the final presentation (technical reasoning, data analysis, strategy justification) *decisively* — leaderboard is only a quantitative guide.
 
@@ -127,3 +127,37 @@ Test = 1,008 h public (leaderboard) + hidden private half used for the final ver
 OpenAI-compatible inference API at `https://api.helmcode.com/v1` (docs: https://helmcode.com/docs). The shared participant API key is distributed
 in the organisers' Discord/announcement - **never commit it**; keep it in env var `HELMCODE_API_KEY`.
 Models (plan-covered): `glm5.3-flash`, `deepseek-v4-flash`, `qwen3.6`, `gemma4`; `glm5.3` is a paid add-on; frontier Claude/GPT/Gemini ids need prepaid credit.
+
+## Verified against the official kit (`starter_kit/environment.py`, in `docs/official/` + git-ignored `starter_kit/`)
+
+- `export_price = 0.0`; baseline (no battery) grid = max(load − pv, 0); CO2 counted on grid import only.
+- Score in points = 100·(0.7·dCO2 + 0.3·dCost) − 0.2·infractions (a power clip and a capacity clip in the same hour count separately).
+- Future price/CO2 lists **start at the current hour** (`preus_properes_24h[0] == preu_actual`, so they hold now + the next 23 h) and are **truncated** (not padded) when fewer than 24 steps of the simulation remain. Within one run they cross the month jumps (the entries after a week's last hour are the next test week's first hours).
+- Our `sim/simulator.py` matches the official env (see `tests/test_vs_official.py`). Baseline heuristic on the full train set: **score ≈ 1.27**, so realistic scores are small numbers; improvements must be measured on whole weeks.
+- Hidden test: `data/test_hidden/`, last 7 days of each of 12 months = 2,016 h.
+
+## Extra details from the official kit docs (`docs/official/`)
+
+- Train CSV range: 2025-09-01 → 2026-09-01 (price/CO2 files have 6,768 h; hourly merged table with load+pv has ~5,993 h because the last 7 days of each month are removed for the hidden test).
+- ENUNCIAT says SOC0 = 50 % "at the start of each evaluation period"; the FAQ says only at hour 0 of the whole simulation. Unknown whether each test week restarts at 50 % → don't rely on carry-over SOC across weeks.
+- Failed submissions (syntax error, missing class) do **not** consume quota.
+- AST scanner is broader than listed on the web page: also forbids `http`, `gc`, `builtins`, `signal`, `threading`, `multiprocessing`, `globals()/locals()/vars()/compile()/breakpoint()`, and attributes like `__code__`, `__globals__`, `f_back`. `sys.exit()` is forbidden. `functools`, `heapq`, `bisect`, `re`, `copy`, `pickle`, `dataclasses` are mentioned as OK in ENUNCIAT but NOT on the web list: avoid them. `sim/check.py` now mirrors the official scanner.
+- The hidden-test path is off limits: do not try to read `data/test_hidden` or embed test-week data; the jury audits code.
+- Official helper: `python starter_kit/check_submission.py agent.py` (24-step smoke test) — run it as well as `python -m sim.check`.
+
+## Website re-check (2026-11-14, ~13:00) and hard bounds
+
+Re-scraped all 5 tabs (Bases, Dades, Lliurament, Leaderboard, FAQ) with every expander opened: **content identical to the first scrape**; leaderboard still empty.
+Not extractable as text: the interactive data inspector and sensor dictionary (canvas tables, "20 variables"); their content is in `docs/official/GUIA_VARIABLES.md`.
+Other page details: the leaderboard tab offers a CSV backup download of the public ranking; the page also has dark/light mode only (no rules).
+
+### DO NOT go out of bounds (checklist for every agent)
+
+1. **Scoring/physics:** never request beyond ±500 kW or beyond the SOC room; always return through the clamp; return a finite float (no NaN/None/arrays).
+2. **Information:** use only `obs` (+ own `self.historial` + models in the zip). Future demand/solar are not given - forecast them. Do not look for, read, embed or derive anything from the hidden test weeks or from price/CO2 values of held-out weeks.
+3. **Imports:** only the web whitelist (numpy, pandas, scipy, scikit-learn, joblib, xgboost, lightgbm, math, datetime, collections, itertools, random, json, pathlib, typing). No file/network/system access, no `open()` of absolute paths, no `eval/exec/compile/globals/...`.
+4. **Paths:** models/params only via `Path(__file__).parent / "<file>"`; `agent.py` at ZIP root; no subfolders needed.
+5. **Resources:** whole simulation < 60 s (2,016 steps + model loading); ZIP <= 25 MB; one `BatteryAgent` instance, `act()` called hourly in order; no threads/multiprocessing.
+6. **State:** don't assume SOC resets or carries across test weeks; detect time jumps (> 2 h) in `obs["timestamp"]` and reset short windows.
+7. **Quota/identity:** 10 real submits per shift (Sat <21:00, Sat 21:00-Sun 08:00, Sun 08:00-close); quick validation is free; team PIN never in git or docs; first submit requires team name + members; every submit is archived and audited by the jury.
+8. **Conflicts between sources** (penalty 0.2 vs 1.0, SOC reset, export price 0 vs 0.04): take the stricter interpretation.

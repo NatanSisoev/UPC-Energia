@@ -22,9 +22,9 @@ The jury decides *with* the presentation, so the DEMO track is not optional poli
 
 | Person | Primary track | Secondary |
 |---|---|---|
-| Natan | TBD | |
-| Aiman | TBD | |
-| Sami | TBD | |
+| Natan | MODEL - optimizer (oracle bound, rules, MPC) | demo help |
+| Aiman | MODEL - forecasting + EDA | optimizer help |
+| Sami | DEMO - frontend, story, slides | data insights |
 
 ## 2. Push often, pull deliberately
 

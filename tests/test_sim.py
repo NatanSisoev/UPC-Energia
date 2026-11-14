@@ -52,3 +52,26 @@ def test_agent_passes_ast_scan():
 def test_energy_accounting_round_trip():
     """Charge 100 kWh then discharge: stored = 100*eta, deliverable = 100*eta*eta = 90."""
     assert 100 * ETA * ETA == pytest.approx(90.0)
+
+
+def test_ast_scan_rejects_unlisted_and_forbidden_code(tmp_path):
+    from sim.check import ast_scan
+    nl = chr(10)
+    for snippet in ("import os", "import requests", "import torch", "from matplotlib import pyplot", "x = eval('1')"):
+        f = tmp_path / "bad.py"
+        f.write_text(snippet + nl)
+        assert ast_scan(f), snippet
+
+
+def test_ast_scan_accepts_allowed_libraries(tmp_path):
+    from sim.check import ast_scan
+    nl = chr(10)
+    lines = [
+        "import numpy as np",
+        "from pathlib import Path",
+        "import joblib",
+        "from sklearn.ensemble import RandomForestRegressor",
+    ]
+    f = tmp_path / "ok.py"
+    f.write_text(nl.join(lines) + nl)
+    assert ast_scan(f) == []

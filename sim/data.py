@@ -11,6 +11,13 @@ import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "train"
 CONTADOR_COL = "Contador - POTENCIA ACTIVA EXPORTADA (kW)"
+PV_SCALE_HARD = 12.0                                   # Hard Mode: 12x the solar plant
+METEO_KEYS = {                                         # substring of the meteo.csv column -> Hard Mode telemetry key
+    "IRRADIANCIA (W/m2)": "irradiancia_wm2",
+    "TEMPERATURA AMBIENTE": "temp_ambient_c",
+    "TEMPERATURA PANEL": "temp_panel_c",
+    "VELOCIDAD VIENTO": "vent_ms",
+}
 
 
 def data_available(data_dir: Path = DATA_DIR) -> bool:
@@ -21,7 +28,21 @@ def _read(data_dir: Path, name: str) -> pd.DataFrame:
     return pd.read_csv(Path(data_dir) / name, parse_dates=["Fecha"]).set_index("Fecha")
 
 
-def load_campus_hourly(data_dir: Path = DATA_DIR) -> pd.DataFrame:
+def load_meteo_hourly(data_dir: Path = DATA_DIR) -> pd.DataFrame:
+    """Hourly means of the weather station, columns named like the Hard Mode telemetry keys."""
+    meteo = _read(data_dir, "meteo.csv")
+    cols = {next(c for c in meteo.columns if c.endswith(k) or k in c and "SENSOR" in c): v
+            for k, v in METEO_KEYS.items()}
+    return meteo[list(cols)].rename(columns=cols).resample("1h").mean()
+
+
+def load_campus_hourly(data_dir: Path = DATA_DIR, hard: bool = False) -> pd.DataFrame:
+    """hard=True gives the Hard Mode campus: solar x12 plus the hourly weather columns (NaN where the station
+    has no reading). Use it with sim.simulator.HARD."""
+    if hard:
+        df = load_campus_hourly(data_dir)
+        df["pv_kw"] *= PV_SCALE_HARD
+        return df.join(load_meteo_hourly(data_dir), how="left")
     contador = _read(data_dir, "contador.csv")
     load = (-contador[CONTADOR_COL]).clip(lower=0, upper=5000).resample("1h").mean().dropna()
 

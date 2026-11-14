@@ -227,3 +227,4 @@ submission.zip
 *.pkl.bak
 .venv/
 docs/official/
+*.zip

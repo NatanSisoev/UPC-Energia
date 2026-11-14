@@ -9,24 +9,47 @@ from pathlib import Path
 from sim.data import synthetic_campus
 from sim.simulator import build_obs, load_agent_class, simulate
 
-FORBIDDEN_CALLS = {"eval", "exec", "compile", "__import__", "open"}
-ALLOWED = {"numpy", "pandas", "scipy", "sklearn", "joblib", "xgboost", "lightgbm", "math", "datetime",
-           "collections", "itertools", "random", "json", "pathlib", "typing", "__future__"}
+# Same rules as the official starter_kit/check_submission.py (AST scanner on the server).
+FORBIDDEN_MODULES = {
+    "os", "sys", "shutil", "subprocess", "socket", "urllib", "requests", "http", "ftplib", "paramiko", "telnetlib",
+    "pty", "posix", "ctypes", "importlib", "inspect", "gc", "builtins", "fcntl", "signal", "threading",
+    "multiprocessing", "aiohttp",
+}
+FORBIDDEN_CALLS = {"system", "popen", "spawn", "rmtree", "get_objects", "currentframe", "stack"}
+FORBIDDEN_BUILTINS = {"eval", "exec", "__import__", "compile", "breakpoint", "globals", "locals", "vars"}
+FORBIDDEN_ATTRS = {"f_back", "f_locals", "f_globals", "__subclasses__", "__builtins__", "__globals__", "__code__"}
+
+
+# Whitelist (ENUNCIAT "Biblioteques admeses"): agent code may import ONLY these top-level modules.
+ALLOWED_MODULES = {
+    # exactly the list on the web "Entorn Oficial d'Execucio" (stricter than ENUNCIAT.md, which also admits
+    # functools/heapq/bisect/re/copy/pickle/dataclasses - we avoid those to be safe)
+    "numpy", "pandas", "scipy", "sklearn", "joblib", "xgboost", "lightgbm",
+    "math", "datetime", "collections", "itertools", "random", "json", "pathlib", "typing",
+    "__future__",
+}
 
 
 def ast_scan(path: Path) -> list:
     problems = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        mods = []
         if isinstance(node, ast.Import):
-            mods = [a.name for a in node.names]
+            for a in node.names:
+                root = a.name.split(".")[0]
+                if root in FORBIDDEN_MODULES or root not in ALLOWED_MODULES:
+                    problems.append(f"line {node.lineno}: import '{a.name}' not allowed")
         elif isinstance(node, ast.ImportFrom) and node.module:
-            mods = [node.module]
-        for m in mods:
-            if m.split(".")[0] not in ALLOWED:
-                problems.append(f"line {node.lineno}: import '{m}' not allowed")
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in FORBIDDEN_CALLS:
-            problems.append(f"line {node.lineno}: call '{node.func.id}' not allowed")
+            root = node.module.split(".")[0]
+            if root in FORBIDDEN_MODULES or root not in ALLOWED_MODULES:
+                problems.append(f"line {node.lineno}: import from '{node.module}' not allowed")
+        elif isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_ATTRS:
+            problems.append(f"line {node.lineno}: attribute '{node.attr}' not allowed")
+        elif isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Attribute) and f.attr in FORBIDDEN_CALLS:
+                problems.append(f"line {node.lineno}: call '{f.attr}()' not allowed")
+            elif isinstance(f, ast.Name) and f.id in FORBIDDEN_BUILTINS:
+                problems.append(f"line {node.lineno}: call '{f.id}()' not allowed")
     return problems
 
 
