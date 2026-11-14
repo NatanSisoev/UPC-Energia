@@ -102,7 +102,7 @@ class BatteryAgent:
         self.n_grid = int(model.get("n_grid", N_GRID))             # SOC grid of the planner (121 tuned: no score loss)
         self.historial = []                           # (timestamp, soc_kwh, setpoint_kw) of every step
         size = RUN_HOURS + self.horizon + 8
-        self.val = {s: np.full(size, np.nan) for s in ("price", "co2", "load", "pv", "irr", "tamb", "tpan")}   # measurements by step
+        self.val = {s: np.full(size, np.nan) for s in ("price", "co2", "load", "pv", "irr", "tamb", "tpan", "wind")}   # measurements by step
         self.base = {s: np.full(size, np.nan) for s in ("price", "co2", "load", "pv")}   # profile / clear sky
         self.step = -1
         self.block_start = 0                          # step at which the current contiguous week began
@@ -221,7 +221,7 @@ class BatteryAgent:
             self.val["co2"][i] = self._num(obs.get("co2_actual"), np.nan)
         tele = obs.get("noves_dades_5min") or {}
         if i > 0:                                                      # weather of the hour that has just ended
-            for key, s in (("irradiancia_wm2", "irr"), ("temp_ambient_c", "tamb"), ("temp_panel_c", "tpan")):
+            for key, s in (("irradiancia_wm2", "irr"), ("temp_ambient_c", "tamb"), ("temp_panel_c", "tpan"), ("vent_ms", "wind")):
                 self.val[s][i - 1] = self._num(tele.get(key), np.nan)
         load = self._num(tele.get("ultim_consum_kw"), np.nan)
         pv = self._num(tele.get("ultima_solar_kw"), np.nan)
@@ -335,6 +335,11 @@ class BatteryAgent:
 
         w24 = self.val["tamb"][lo:i]
         w24 = w24[np.isfinite(w24)]
+        def mean24(s):
+            v = self.val[s][lo:i]
+            v = v[np.isfinite(v)]
+            return float(v.mean()) if len(v) else nan
+
         const = [float(cal["hour"][0]), min((i - b0) / 24.0, 7.0), last("tamb"), last("tpan"), last("irr"),
                  float(w24.mean()) if len(w24) else nan]
         for s in ("price", "co2", "load"):
@@ -344,10 +349,22 @@ class BatteryAgent:
                   cal["loadtype"][:n].astype(float), f["pv"][1][:n], cal["clear"][:n]]
         common += [np.full(n, c, dtype=float) for c in const]
         out = {}
+        wx = [last("wind"), mean24("wind"), mean24("irr"), mean24("tpan")]
+        wx = [np.full(n, c, dtype=float) for c in wx]
+        target = np.arange(i, i + n)
         for s in ("price", "co2", "load"):
-            cols = common + [f[s][0][:n], lin[s][:n], f[s][3][:n], lin[s][:n] - f[s][0][:n]]
+            last_m = i + known - 1 if s != "load" else i - 1
+            src = target - 24 * np.maximum(np.ceil((target - last_m) / 24.0), 1.0).astype(int)
+            raw = []                                                   # same hour one and two days earlier (raw level)
+            for sh in (0, 24):
+                k = src - sh
+                raw.append(np.where(k >= b0, self.val[s][np.maximum(k, 0)], nan))
+            day = self.val[s][max(b0, last_m - 23):last_m + 1]
+            day = day[np.isfinite(day)]
+            dmin, dmax, dmean = (float(day.min()), float(day.max()), float(day.mean())) if len(day) else (nan, nan, nan)
+            cols = common + [f[s][0][:n], lin[s][:n], f[s][3][:n], lin[s][:n] - f[s][0][:n]] + wx + raw                 + [np.full(n, v) for v in (dmin, dmax, dmean)]
             out[s] = np.column_stack(cols)
-        cols = common + [lin["pv"][:n], lin["pv"][:n] / np.maximum(cal["clear"][:n], 1.0)]
+        cols = common + [lin["pv"][:n], lin["pv"][:n] / np.maximum(cal["clear"][:n], 1.0)] + wx
         out["pv"] = np.column_stack(cols)
         return out
 
