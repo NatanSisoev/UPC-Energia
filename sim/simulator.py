@@ -49,9 +49,10 @@ def _grid_metrics(load, pv, setpoint, price, co2):
 
 
 def _future(df: pd.DataFrame, i: int, col: str) -> list:
-    vals = df[col].iloc[i + 1:i + 25].tolist()
-    last = vals[-1] if vals else float(df[col].iloc[i])
-    return (vals + [last] * 24)[:24]
+    """Known values for the next 24 simulation steps, exactly as the official environment.py builds them:
+    the list STARTS AT THE CURRENT HOUR (element 0 == preu_actual / co2_actual) and is truncated, not padded,
+    when fewer than 24 steps remain."""
+    return df[col].iloc[i:i + 24].tolist()
 
 
 def build_obs(df: pd.DataFrame, i: int, soc: float) -> dict:
