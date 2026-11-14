@@ -10,6 +10,7 @@ Goals: **1. best leaderboard score** (MODEL track) · **2. best demo/presentatio
 1. [CHALLENGE.md](CHALLENGE.md) — full spec: physics, `obs` contract, scoring, data, submission limits, forbidden imports.
 2. [WORKFLOW.md](WORKFLOW.md) — **mandatory** branch / merge / submission rules for the three of us and our agents.
 3. `docs/HANDOFF.md` — what teammates changed recently.
+4. `docs/SOLUTION.md` — **how the current agent works, the evidence, what was tried and dropped, assumptions and risks.** Read it before touching `agent/` or `experiments/`.
 
 ## Setup — DO THIS YOURSELF at the start of a session (do not ask the human; they have pre-authorised these downloads)
 
@@ -40,12 +41,14 @@ Start every session with the Setup block above, then read `PLAN.md` and `docs/HA
 
 ### Branch `natan` — MODEL track: optimizer
 Owner of `agent/agent.py` and `experiments/oracle/`, `experiments/rule_v2/`, `experiments/mpc/`.
-1. Perfect-foresight LP/DP upper bound on whole-week blocks (what is the max achievable score, where does the gain come from).
-2. Rule-based v2 using the 24 h price+CO2 forecast (beat the template).
-3. MPC agent: each hour plan 24 h (LP via scipy HiGHS or DP over SOC) with known price/CO2 + forecast load/solar, apply first action, always through the safety clamp, <25 ms/step.
-4. Merge to `main` any verified better agent; run submissions (announce first).
+State on 2026-11-14 (details: `docs/SOLUTION.md`): items 1 and 3 are **done** and on `main`; item 2 was skipped because the MPC already equals the bound.
+1. DONE — perfect-foresight LP bound (`experiments/oracle/oracle_lp.py`): 5.675 on the train year as one run, 6.11 mean per week.
+2. SKIPPED — rule-based v2.
+3. DONE — exact 24 h MPC in `agent/agent.py` (dynamic programme on the marginal value of stored energy, numpy only, no load/solar forecast): 5.667 on the train year = 99.85 % of the bound, 0 infractions, 1-6 ms/step.
+4. TO DO — run submissions (announce first, log in `SUBMISSIONS.md`); merge to `main` only a verified better agent. The model is at the physical optimum, so do not expect further gains: submit early (ties are broken by submission time).
 
 ### Branch `aiman` — MODEL track: forecasting + data analysis
+Note 2026-11-14: the agent on `main` does not use load/solar forecasts — on this campus they cannot change the decisions (`docs/SOLUTION.md` §2). Check with Natan before spending time on items 2-3; the EDA (item 1) is still needed for the demo.
 Owner of `notebooks/`, `experiments/forecast/`, `agent/models/`.
 1. EDA notebook: load and solar by hour/weekday/month, train-vs-last-week-of-month drift, price/CO2 patterns, solar vs irradiance. Share key findings in `docs/HANDOFF.md` (Sami uses them for the demo).
 2. Forecasters for next-24 h load and solar using ONLY what the agent sees (`hour`, `day_of_week`, month, `noves_dades_5min`, `self.historial`): seasonal-naive -> ridge -> LightGBM. Validate by whole-week CV (MAE by horizon).
@@ -99,7 +102,7 @@ Only "Trametre al Leaderboard" consumes quota; the web "Validació Ràpida" (48 
 ## Repo layout
 
 ```
-agent/agent.py        # The submittable agent (copy of official template + safe clamp). Must stay valid on main.
+agent/agent.py        # The submittable agent: exact 24 h MPC + safe clamp (see docs/SOLUTION.md). Must stay valid on main.
 agent/models/         # .pkl files loaded via Path(__file__).parent (keep small, <25 MB zip)
 sim/                  # Local simulator + metric + submission checker (shared infra)
   data.py             #   loads data/train/*.csv into the hourly campus dataframe
@@ -108,7 +111,8 @@ sim/                  # Local simulator + metric + submission checker (shared in
   check.py            #   python -m sim.check agent/agent.py  (AST scan, clamp test, timing, builds submission.zip)
 demo/                 # DEMO track: app, figures, slides
 notebooks/            # exploration (MODEL track)
-experiments/          # per-experiment code (experiments/<name>/)
+experiments/          # per-experiment code (experiments/<name>/): oracle/ (perfect-foresight bound), mpc/ (arbitrage bench,
+                      #   sensitivity, official-env validation), baseline/ (the original template agent)
 tests/                # pytest
 data/                 # NOT in git. Put the official ZIP contents here (data/train/*.csv). See data/README.md
 starter_kit/          # NOT in git (official kit, ignored) — drop it here if you downloaded it
@@ -129,8 +133,10 @@ python -m sim.check agent/agent.py       # AST/clamp/timing check; --zip builds 
 ## Engineering notes
 
 - `sim/` is validated against the official `starter_kit/environment.py` (`tests/test_vs_official.py`): export price 0, baseline = max(load − pv, 0), CO2/cost on grid import only. If you change `sim/`, that test must still pass and the change goes through `main`.
-- Baseline template scores ≈ 1.3 on the real train data (dCO2 ≈ 0.9 %, dCost ≈ 2.2 %) — gains are small; judge changes on whole-week blocks.
+- Reference scores on the real train data (one 5,993 h run): template 1.27, **current agent 5.67**, perfect-foresight bound 5.675. Judge changes on whole-week blocks and against the bound (`python -m experiments.oracle.oracle_lp`).
+- `preus_properes_24h` / `co2_properes_24h` **start at the current hour** (element 0 == `preu_actual`) and are truncated, not padded, at the end of the simulation (official `environment.py`; `sim/` matches). Reading them as t+1..t+24 costs ~45 % of the score.
+- Do not judge the agent on `synthetic_campus()` scores: the synthetic campus has a large solar surplus, the real one never does.
 - Avoid overfitting: train = first ~3 weeks of each month; hidden test = last 7 days of each month (public 50 % on the leaderboard, private 50 % for the final verdict). Never random hour splits.
 - Month jumps: if `obs["timestamp"] − previous > 2 h`, reset short rolling windows. SOC may or may not restart at 50 % for each test week (docs disagree) — don't depend on it.
-- Prices/CO2 for the next 24 h are given; demand & solar are not and must be forecast.
+- Prices/CO2 for the next 24 h are given; demand & solar are not. On this campus net load is always above the battery's 500 kW, so the score is linear in the setpoint and forecasting them does not change the optimal action (they only feed the export guard).
 - Keep code clean and commented where non-obvious — the jury audits all submitted code.

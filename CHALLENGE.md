@@ -132,7 +132,7 @@ Models (plan-covered): `glm5.3-flash`, `deepseek-v4-flash`, `qwen3.6`, `gemma4`;
 
 - `export_price = 0.0`; baseline (no battery) grid = max(load − pv, 0); CO2 counted on grid import only.
 - Score in points = 100·(0.7·dCO2 + 0.3·dCost) − 0.2·infractions (a power clip and a capacity clip in the same hour count separately).
-- Future price/CO2 lists are **truncated** (not padded) at the end of a test block.
+- Future price/CO2 lists **start at the current hour** (`preus_properes_24h[0] == preu_actual`, so they hold now + the next 23 h) and are **truncated** (not padded) when fewer than 24 steps of the simulation remain. Within one run they cross the month jumps (the entries after a week's last hour are the next test week's first hours).
 - Our `sim/simulator.py` matches the official env (see `tests/test_vs_official.py`). Baseline heuristic on the full train set: **score ≈ 1.27**, so realistic scores are small numbers; improvements must be measured on whole weeks.
 - Hidden test: `data/test_hidden/`, last 7 days of each of 12 months = 2,016 h.
 
