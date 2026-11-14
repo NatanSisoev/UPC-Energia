@@ -84,6 +84,8 @@ class BatteryAgent:
         self.coef = {s: {r: np.asarray(c, dtype=float) for r, c in d.items()} for s, d in model["coef"].items()}
         self.holidays = set(model.get("holidays", []))
         self.spread_scale = float(model.get("spread_scale", 1.0))
+        self.spread_mode = str(model.get("spread_mode", "lead"))   # "lead": spread grows with the lead; "flat": nowcast spread everywhere
+        self.tv = float(model.get("terminal_value", 0.0))          # value of one stored kWh after the horizon (0: empty the battery)
         self.historial = []                           # (timestamp, soc_kwh, setpoint_kw) of every step
         size = RUN_HOURS + HORIZON + 8
         self.val = {s: np.full(size, np.nan) for s in ("price", "co2", "load", "pv")}    # measurements by step
@@ -285,7 +287,7 @@ class BatteryAgent:
 
     def _spread(self, n, cal):
         """Forecast-error scenarios of the net load, kW: (n hours, K equally likely scenarios)."""
-        bucket = LEAD_BUCKET[:n]
+        bucket = LEAD_BUCKET[:n] if self.spread_mode == "lead" else np.zeros(n, dtype=int)
         col = np.searchsorted(CS_BINS, cal["clear"][:n])
         return self.m["err"][bucket, col] * self.spread_scale
 
@@ -298,7 +300,7 @@ class BatteryAgent:
         grid = np.linspace(0.0, cap, N_GRID)
         up, down = pmax * ETA, pmax / ETA
         rank = np.arange(atoms.shape[1]) / atoms.shape[1]
-        q = np.zeros(N_GRID)                                           # nothing is worth storing after the horizon
+        q = np.full(N_GRID, -self.tv)      # value of stored energy after the horizon (0: nothing is worth storing)
         for t in range(len(w) - 1, 0, -1):
             p = np.sort(np.clip(-atoms[t], -pmax, pmax))               # setpoint at which each scenario stops importing
             charging = p > 0
