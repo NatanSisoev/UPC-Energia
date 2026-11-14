@@ -169,8 +169,55 @@ Two gotchas worth remembering:
 | `experiments/mpc/sensitivity.py` | the loss table of §5 |
 | `experiments/mpc/validate.py` | official-env validation on test-shaped samples + timing |
 | `experiments/baseline/template_agent.py` | the original template + clamp, for comparisons and the demo |
+| `agent_hard/agent.py` + `agent_hard/model.json` | **Hard Mode** agent + fitted parameters (see §10) |
+| `experiments/hard/build_model.py` | fits all Hard Mode parameters (profiles, sun envelope, ridge, error quantiles) |
+| `experiments/hard/validate.py`, `tune.py` | hold-out validation, value-of-information ladder, knob grid |
+| `tests/test_agent_hard.py` | 20 tests: clamp at extreme SOC, malformed obs, planner ≈ LP with perfect forecasts |
 
 ## 9. Before a real submission
 
 `CLAUDE.md` pre-submit checklist, steps 1–3 are done for the current `main`. Still to do by a human: step 4 (web
 "Validació Ràpida", free), then announce, submit, and log it in `SUBMISSIONS.md`.
+
+## 10. HARD MODE (`agent_hard/`, design and evidence: `docs/HARD_MODE_HANDOFF.md`)
+
+Written 2026-11-14 evening, same day. The organisers opened a Hard Mode: **6,000 kWh / ±1,500 kW battery, solar × 12
+(midday surplus up to ~1,000 kW, export earns 0), and only 3 h of market visibility** (current + next 2 h) instead
+of 24. Own leaderboard, own quota. Perfect-foresight bound: 22.40 on the test-shaped sample (last 7 train days of
+every month), 20.67 on the whole train year.
+
+Why the standard agent does not transfer: with 12× solar the net load goes **negative** ~9 % of the time, so grid
+import is `max(net + setpoint, 0)` — the score is no longer linear in the setpoint, discharging into a surplus is
+paid in full, and the real net load of the *current* hour is unknown. The optimal discharge becomes a **quantile of
+the net-load forecast distribution**, not a point optimisation.
+
+**Design** (`agent_hard/agent.py`, numpy + stdlib only, ~340 lines):
+
+1. **Forecasts, 48 h** (all parameters fitted offline by `experiments/hard/build_model.py` into `model.json`):
+   price, CO2, load = `month × day-type × hour` profile + a 3-feature linear correction from what the agent has
+   measured in the current week (last residual, 24 h mean residual, same-hour residual of the previous day);
+   ridge fitted per lead, per feature set (A/B). Solar = clear-sky kW from the sun's position (DST-aware basis
+   shared between build and agent) × a clearness index that persists from recent daytime hours. Net-load
+   scenarios = point forecast + empirical error quantiles per lead bucket × clear-sky bin (K = 7).
+2. **Planner**: backward DP on the marginal value of stored energy `q_t(s)`, generalised to the expected cost over
+   scenarios — one backward step is `q_t(s) = min over breakpoints b of max(q_{t+1}(s + b), level(b))` on a 121-point
+   SOC grid; the first hour is chosen by direct minimisation of expected cost + cost-to-go over ~300 candidates.
+   With one scenario it reduces to the standard-mode DP. Every return goes through the mandatory clamp.
+3. **Tuned on the hold-out** (never on train day-fits): full spread beats half (20.32 vs 20.16) and none (19.59);
+   lead-dependent vs flat spread is a tie; terminal value 0; HORIZON 24 (not 48) and 121-grid points — same score,
+   ~4× faster. All knobs live in `model.json`.
+
+**Evidence** (`python -m experiments.hard.validate [--ladder]`):
+
+| Run (1,848 h test-shaped, model fitted WITHOUT those days) | Score | % of bound |
+|---|---|---|
+| Perfect-foresight LP bound | 22.40 | 100 % |
+| Agent, all forecasts perfect (planner check) | 22.32 | 99.6 % |
+| Agent, perfect market only | 21.34 | 95.2 % |
+| Agent, perfect load/solar only | 21.16 | 94.5 % |
+| **Agent as submitted** | **20.32** | **90.7 %** |
+
+0 violations everywhere; ~8 ms/step fresh-process (≈16 s for 2,016 steps, limit 60 s); `tests/test_agent_hard.py`
+(20 tests) green; `python -m sim.check --hard --zip` PASS; `starter_kit/check_submission.py submission_hard.zip`
+VALID. The two forecast gaps (~1 point each) are the next lever — LightGBM residuals on the same features is
+prepared work for shifts 2–3.
