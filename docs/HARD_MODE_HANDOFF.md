@@ -1,5 +1,8 @@
 # Hard Mode — handoff to the next session
 
+**NEWER (2026-11-14 night): read `docs/HARD_MODE_PLAN.md` first** - current state, submit queue and the exact
+step-by-step plan. This file remains the reference for the Hard Mode rules and the agent's design.
+
 Written Saturday 2026-11-14, ~17:50, by Natan's agent. **Read this whole file before touching anything.**
 It replaces the session context: everything known about Hard Mode, what is built, what is not, and the exact plan.
 

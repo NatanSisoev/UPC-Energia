@@ -24,3 +24,15 @@ Local reference: hold-out (last 7 train days of each month) 20.32, perfect-fores
 | H9 | 1 | Natan | see git log | - | 23.54 (0 infractions; CO2 22.93 %, cost 24.96 %) | H7 with `co2_mult` 2.2 (`submission_hard_09.zip`). Past the peak: CO2 +0.08 vs H8 but cost -0.69. Quadratic fit of 1.3/1.7/2.2 puts the optimum at ~1.8. |
 | H10 | 1 | Natan | see git log | - | **23.71** (best, 0 infractions; CO2 22.89 %, cost 25.63 %) | `co2_mult` 1.8 (`submission_hard_10.zip`) = what `agent_hard/` holds: LGB boosters + published calendar + CO2-tilted weights, 24 h horizon, no planner scenarios. Tilt curve 1.0/1.3/1.7/1.8/2.2 = 23.19/23.35/23.69/23.71/23.54: peak ~1.8. |
 | H11 | 1 | Natan | see git log | - | 23.67 | `co2_mult` 1.9. Within noise of 1.8 (23.71) -> tilt peak ~1.8, kept. |
+| H12 | - | Natan | probe zip | - | 22.76 (CO2 21.68 %, cost 25.29 %) | `submissions/hard/probes/p03_tilt10_pexp05.zip`: `co2_mult` 1.0 + `price_expand` 0.5. -0.43 vs H6 (23.19, same tilt): flattening the price forecast hurts, so the tilt gain is not "price forecast unreliable". |
+| H13 | - | Natan | probe zip | - | 23.10 (CO2 22.60 %, cost 24.26 %) | `p01_price_expand05.zip`: H10 + `price_expand` 0.5. -0.61 vs H10. |
+| H14 | - | Natan | probe zip | - | 22.17 (CO2 21.92 %, cost 22.76 %) | `p02_price_expand00.zip`: price forecast flat beyond the 3 published hours. -1.54 vs H10: the price forecast beyond 3 h is worth at least 1.5 points on the test. |
+| H15 | - | Natan | probe zip | - | **23.84** (best, CO2 23.06 %, cost 25.65 %) | `p04_co2_expand13.zip`: H10 + `co2_expand` 1.3. +0.13 vs H10, both terms up: the CO2 forecast is too flat for the planner. Queue and next probes: `submissions/hard/QUEUE.md`. |
+| H16 | - | Natan | probe zip | - | 23.72 (CO2 23.13 %, cost 25.09 %) | `q01_co2e16.zip`: `co2_expand` 1.6. Past the peak (1.0 / 1.3 / 1.6 / 2.0 = 23.71 / 23.84 / 23.72 / 23.24). |
+| H17 | - | Natan | probe zip | - | 23.24 (CO2 23.18 %, cost 23.37 %) | `q02_co2e20.zip`: `co2_expand` 2.0. |
+| H18 | - | Natan | probe zip | - | 23.80 (CO2 22.95 %, cost 25.79 %) | `q03_co2e13_pe13.zip`: `co2_expand` 1.3 + `price_expand` 1.3. Level with H15. |
+| H19 | - | Natan | probe zip | - | 23.60 (CO2 22.73 %, cost 25.64 %) | `q04_co2e13_pe16.zip`: `price_expand` 1.6. Past the peak. |
+| H20 | - | Natan | probe zip | - | 23.73 (CO2 23.04 %, cost 25.32 %) | `q05_co2e16_pe13.zip`. |
+| H21 | - | Natan | probe zip | - | 23.56 (CO2 22.48 %, cost 26.07 %) | `q06_co2e13_tilt14.zip`: `co2_mult` 1.4 + `co2_expand` 1.3. Sharpening does not replace the tilt. |
+| H22 | - | Natan | probe zip | - | 23.55 (CO2 22.77 %, cost 25.38 %) | `q07_co2e16_tilt14.zip`. |
+| H23 | - | Natan | nn zip | 20.54 (hold-out, twin 20.46) | 23.40 (CO2 22.50 %, cost 25.52 %) | `submissions/hard/nn/c30_mlp_b050.zip`: H10 + reference MLP residual averaged 50/50 with LightGBM. -0.31 vs H10 although the hold-out said +0.08. |
