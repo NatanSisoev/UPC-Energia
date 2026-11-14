@@ -144,3 +144,20 @@ Models (plan-covered): `glm5.3-flash`, `deepseek-v4-flash`, `qwen3.6`, `gemma4`;
 - AST scanner is broader than listed on the web page: also forbids `http`, `gc`, `builtins`, `signal`, `threading`, `multiprocessing`, `globals()/locals()/vars()/compile()/breakpoint()`, and attributes like `__code__`, `__globals__`, `f_back`. `sys.exit()` is forbidden. `functools`, `heapq`, `bisect`, `re`, `copy`, `pickle`, `dataclasses` are mentioned as OK in ENUNCIAT but NOT on the web list: avoid them. `sim/check.py` now mirrors the official scanner.
 - The hidden-test path is off limits: do not try to read `data/test_hidden` or embed test-week data; the jury audits code.
 - Official helper: `python starter_kit/check_submission.py agent.py` (24-step smoke test) — run it as well as `python -m sim.check`.
+
+## Website re-check (2026-11-14, ~13:00) and hard bounds
+
+Re-scraped all 5 tabs (Bases, Dades, Lliurament, Leaderboard, FAQ) with every expander opened: **content identical to the first scrape**; leaderboard still empty.
+Not extractable as text: the interactive data inspector and sensor dictionary (canvas tables, "20 variables"); their content is in `docs/official/GUIA_VARIABLES.md`.
+Other page details: the leaderboard tab offers a CSV backup download of the public ranking; the page also has dark/light mode only (no rules).
+
+### DO NOT go out of bounds (checklist for every agent)
+
+1. **Scoring/physics:** never request beyond ±500 kW or beyond the SOC room; always return through the clamp; return a finite float (no NaN/None/arrays).
+2. **Information:** use only `obs` (+ own `self.historial` + models in the zip). Future demand/solar are not given - forecast them. Do not look for, read, embed or derive anything from the hidden test weeks or from price/CO2 values of held-out weeks.
+3. **Imports:** only the web whitelist (numpy, pandas, scipy, scikit-learn, joblib, xgboost, lightgbm, math, datetime, collections, itertools, random, json, pathlib, typing). No file/network/system access, no `open()` of absolute paths, no `eval/exec/compile/globals/...`.
+4. **Paths:** models/params only via `Path(__file__).parent / "<file>"`; `agent.py` at ZIP root; no subfolders needed.
+5. **Resources:** whole simulation < 60 s (2,016 steps + model loading); ZIP <= 25 MB; one `BatteryAgent` instance, `act()` called hourly in order; no threads/multiprocessing.
+6. **State:** don't assume SOC resets or carries across test weeks; detect time jumps (> 2 h) in `obs["timestamp"]` and reset short windows.
+7. **Quota/identity:** 10 real submits per shift (Sat <21:00, Sat 21:00-Sun 08:00, Sun 08:00-close); quick validation is free; team PIN never in git or docs; first submit requires team name + members; every submit is archived and audited by the jury.
+8. **Conflicts between sources** (penalty 0.2 vs 1.0, SOC reset, export price 0 vs 0.04): take the stricter interpretation.
