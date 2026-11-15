@@ -6,7 +6,7 @@
  */
 import { derived, useSim } from '../store/useSim';
 import { fmtKw } from './format';
-import { computeAlarms } from './alarms';
+import { answerKnowledge, buildingDeep, gather } from './assistantKnowledge';
 import { roofKwp, installedKwp, PV_ASBUILT_KWP } from '../sim/engine';
 
 const DOW_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -188,6 +188,8 @@ function atHour(h: number): string {
 }
 
 function buildingAnswer(id: string): string {
+  const k = gather();
+  if (k) return buildingDeep(k, id);
   const c = ctx()!;
   const { d, s, snap, h } = c;
   const i = s.campus!.features.findIndex((f) => f.properties.osmId === id);
@@ -315,20 +317,10 @@ function peakAnswer(): string {
   return `Today's demand peak: **${fmtKw(d.week.load[dp])}** at ${clock(dp)}. Week peak: **${fmtKw(d.week.load[pk])}** on ${hourLabel(pk)}.`;
 }
 
-function alarmsAnswer(): string {
-  const { h } = ctx()!;
-  const all = computeAlarms();
-  const now = all.filter((a) => a.startH <= h && h < a.endH);
-  const next = all.filter((a) => a.startH > h).slice(0, 3);
-  if (!all.length) return 'No alarms this week with the current thresholds. Faults, outages and thresholds can be set in **Settings → Faults & alarms**.';
-  let out = now.length ? `**${now.length} active** at ${hourLabel(h)}: ${now.map((a) => `${a.title} (${a.severity})`).join('; ')}.` : `Nothing active at ${hourLabel(h)}.`;
-  if (next.length) out += ` Coming up: ${next.map((a) => `${a.title} at ${hourLabel(a.startH)}${a.predicted ? ' (predicted)' : ''}`).join('; ')}.`;
-  return out + ' Open the bell in the header for the full list.';
-}
-
 export const HELP =
-  'I can answer questions about the campus at the time selected on the timeline, for example: what to do with the battery, prices and CO₂ in the next 24 h, solar output, ' +
-  'which buildings use most, a specific building ("how much does C4 use?"), yesterday vs today, savings, or jump in time ("show Friday at 9").';
+  'I know everything on the campus for the loaded week: buildings and their share, solar per roof and irradiance, battery SOC/power/yard, grid, prices and CO₂ at any hour, ' +
+  'why the battery charged or discharged ("why did the battery charge at 03:00?"), faults and alarms with their solution, "what happens if the substation fails?", ' +
+  'simulated changes with CO₂/cost/payback, forecast, catalogue prices, weekly totals, anomalies, yesterday vs today, or jump in time ("show Friday at 9").';
 
 /** Answer a free-text question. */
 export function ask(raw: string): Answer {
@@ -337,7 +329,13 @@ export function ask(raw: string): Answer {
   const q = norm(raw);
 
   if (has(q, 'help', 'ayuda', 'ajuda', 'what can', 'que puedes', 'que pots')) return { text: HELP };
-  if (has(q, 'alarm', 'alert', 'alarma', 'fault', 'averia', 'broken', 'roto', 'outage', 'apagon', 'tall', 'problem', 'incid')) return { text: alarmsAnswer() };
+  // the central knowledge module answers everything it recognises (faults, why-the-battery, what-ifs, insights, ...)
+  const early = parseWhen(q, c.h, c.n);
+  const adding = has(q, 'where', 'which', 'what', 'donde', 'en que', 'quin', 'quins') && has(q, 'solar', 'panel', 'pv', 'placa', 'fotovolt') && has(q, 'add', 'install', 'place', 'put', 'anad', 'instal', 'afegir', 'posar');
+  if (!adding) {
+    const ka = answerKnowledge(q, early);
+    if (ka) return ka;
+  }
 
   if (has(q, 'where', 'which', 'what', 'donde', 'en que', 'on', 'quin', 'quins') && has(q, 'solar', 'panel', 'pv', 'placa', 'fotovolt') && has(q, 'add', 'install', 'place', 'put', 'can', 'could', 'anad', 'instal', 'afegir', 'posar', 'poder')) return { text: solarSitesAnswer() };
 

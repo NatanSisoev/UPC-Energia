@@ -5,6 +5,7 @@ import { ask, hourLabel, suggestion } from '../lib/assistant';
 import { activeAt, useAlarms } from '../lib/alarms';
 import { fmtKw } from '../lib/format';
 import { useViewMode } from '../lib/mode';
+import { warmEconomics } from '../lib/assistantKnowledge';
 
 
 interface Msg {
@@ -14,7 +15,22 @@ interface Msg {
   text: string;
 }
 
-const CHIPS = ['In which buildings can we add a solar panel?', 'What should we do now?', 'Any alarms?', 'Cheapest hour in the next 24 h?', 'Which buildings use most?', 'How does today compare to yesterday?', 'How much have we saved?'];
+const CHIPS = [
+  'What should we do now?',
+  'Why did the battery charge at 03:00?',
+  'Which building wastes the most?',
+  'What happens if the substation fails?',
+  'Any alarms or faults?',
+  'Any anomalies this week?',
+  'Which buildings use most?',
+  'Solar production per roof?',
+  'What did my simulated changes change?',
+  'How much do batteries cost and pay back?',
+  'How does today compare to yesterday?',
+  'How much have we saved?',
+  'In which buildings can we add a solar panel?',
+  'Cheapest hour in the next 24 h?',
+];
 
 /** Render **bold** spans and line breaks. */
 function Rich({ text }: { text: string }) {
@@ -141,6 +157,7 @@ export default function Assistant({ onOpenAlarms, onClose, pending, onPendingDon
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
+  const handled = useRef<string | null>(null);
 
   // greeting once the data is in
   useEffect(() => {
@@ -149,9 +166,18 @@ export default function Assistant({ onOpenAlarms, onClose, pending, onPendingDon
     }
   }, [ready, msgs.length]);
 
+  // pre-compute catalogue payback in the background so price questions can quote it
+  useEffect(() => {
+    if (!ready) return;
+    const t = window.setTimeout(warmEconomics, 4000);
+    return () => window.clearTimeout(t);
+  }, [ready]);
+
   // a question handed over from another panel (e.g. "Ask the assistant about this building")
   useEffect(() => {
-    if (!ready || !pending) return;
+    if (!pending) handled.current = null;
+    if (!ready || !pending || handled.current === pending) return; // (StrictMode runs effects twice in dev)
+    handled.current = pending;
     send(pending);
     onPendingDone();
     // eslint-disable-next-line react-hooks/exhaustive-deps

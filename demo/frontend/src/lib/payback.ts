@@ -47,6 +47,8 @@ const make = (priceEur: number, saving: number, life: number): ItemEconomics => 
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 let cache: Economics | null = null;
+/** The economics if already computed (the assistant uses it without waiting). */
+export const cachedEconomics = (): Economics | null => cache;
 
 /**
  * Runs on SWEEP_WEEKS (7 representative weeks spread over the year: the full 35 weeks take ~40 s of MPC runs) and
