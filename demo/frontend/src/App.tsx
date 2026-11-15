@@ -80,23 +80,29 @@ export default function App() {
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[var(--bg)]">
       <Header onSettings={() => setSettings('appearance')} onAlarms={() => toggle('alarms')} onChat={() => toggle('chat')} side={side} />
       <div className="flex min-h-0 flex-1">
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main className="relative flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
           <MapView dark={dark} onAlarms={() => setSide('alarms')} />
           <LiveRunner />
           <LiveHud />
           <ManualFaultAlert onOpen={() => openFaultPanel()} />
-          {ready && (
-            <div className="pointer-events-none absolute inset-x-4 bottom-4 z-10">
-              <TimeBar />
-            </div>
-          )}
           <div className="pointer-events-none absolute bottom-0.5 right-2 z-0 text-[9.5px] faint">© OpenStreetMap contributors · UPC Campus Nord data</div>
           </div>
-          {ready && pinned && (
-            <section onPointerEnter={panelHover.enter} onPointerLeave={panelHover.leave} className="h-1/2 min-h-0 shrink-0 border-t border-[var(--border)] bg-[var(--bg)] p-2" aria-label="Timeline charts">
-              <ChartGrid />
-            </section>
+          {/* one pane: the timeline floats over the map when collapsed; when the charts are open it docks above them in the same panel
+              (same element either way, so the strip keeps its hover state across the change) */}
+          {ready && (
+            <div
+              className={`z-10 flex min-h-0 shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface)] shadow-[0_-2px_10px_rgba(0,0,0,0.08)] ${pinned ? 'h-1/2' : ''}`}
+            >
+              <div className="shrink-0">
+                <TimeBar />
+              </div>
+              {pinned && (
+                <section onPointerEnter={panelHover.enter} onPointerLeave={panelHover.leave} className="min-h-0 flex-1 border-t border-[var(--border)] bg-[var(--bg)] p-2" aria-label="Timeline charts">
+                  <ChartGrid />
+                </section>
+              )}
+            </div>
           )}
         </main>
         {ready && side && (side !== 'building' || selection) && (

@@ -63,7 +63,7 @@ export interface ReplayWeek {
   co2: number[];
   irr: number[];
   temp: number[];
-  mpc: { score: number; dco2: number; dcost: number; viol: number };
+  mpc: { score: number; dco2: number; dcost: number; viol: number; sp?: number[] };
   template: { score: number; dco2: number; dcost: number; viol: number };
 }
 

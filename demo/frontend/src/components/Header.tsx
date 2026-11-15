@@ -6,6 +6,7 @@ import { fmtKw } from '../lib/format';
 import { useAlarms } from '../lib/alarms';
 import Calendar from './Calendar';
 import ModeIndicator from './ModeIndicator';
+import ModelMenu from './ModelMenu';
 
 /** Top bar: identity, calendar, live figures, alarms and settings. */
 export default function Header({ onSettings, onAlarms, onChat, side }: { onSettings: () => void; onAlarms: () => void; onChat: () => void; side: 'chat' | 'alarms' | 'building' | 'fault' | null }) {
@@ -27,6 +28,7 @@ export default function Header({ onSettings, onAlarms, onChat, side }: { onSetti
       </div>
 
       <Calendar />
+      <ModelMenu />
       {snap && <ModeIndicator />}
       <div className="flex-1" />
 

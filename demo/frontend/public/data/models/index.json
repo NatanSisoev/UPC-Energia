@@ -1,0 +1,46 @@
+[
+ {
+  "id": "standard",
+  "name": "Standard MPC",
+  "desc": "agent/agent.py: exact 24 h MPC (challenge winner candidate)",
+  "builtin": true,
+  "available": true,
+  "url": "/data/replay.json",
+  "meanScore": 6.093946337175676,
+  "violations": 0,
+  "msPerStep": 1.973
+ },
+ {
+  "id": "hard",
+  "name": "Hard Mode MPC",
+  "desc": "agent_hard/: 48→24 h stochastic MPC, run here with the Hard Mode observation (3 h price window) on the 2 MWh battery",
+  "builtin": true,
+  "available": true,
+  "url": "/data/models/hard.json",
+  "meanScore": 5.793879860316942,
+  "violations": 0,
+  "msPerStep": 5.183
+ },
+ {
+  "id": "baseline",
+  "name": "Baseline template",
+  "desc": "experiments/baseline: the organisers’ template agent",
+  "builtin": true,
+  "available": true,
+  "url": "/data/models/baseline.json",
+  "meanScore": 1.854768326877607,
+  "violations": 0,
+  "msPerStep": 0.391
+ },
+ {
+  "id": "none",
+  "name": "No battery",
+  "desc": "Reference: the campus without any battery control (score 0 by definition)",
+  "builtin": true,
+  "available": true,
+  "url": null,
+  "meanScore": 0,
+  "violations": 0,
+  "msPerStep": 0
+ }
+]

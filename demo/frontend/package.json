@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "build:models": "node scripts/build-models.mjs",
     "build:data": "node scripts/build-campus-data.mjs",
     "build:ground": "node scripts/build-ground-data.mjs",
     "build:network": "node scripts/build-network-data.mjs",

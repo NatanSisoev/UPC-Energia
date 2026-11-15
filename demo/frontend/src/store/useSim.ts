@@ -77,7 +77,48 @@ export interface AlarmCfg {
   on: Record<AlarmKind, boolean>;
 }
 
+/** A model (agent) that can drive the demo: built-in (public/data/models/index.json) or uploaded (/api/models). */
+export interface ModelInfo {
+  id: string;
+  name: string;
+  desc?: string;
+  builtin: boolean;
+  available: boolean;
+  /** where its replay json lives; null = no battery */
+  url?: string | null;
+  meanScore?: number;
+  violations?: number;
+  msPerStep?: number | null;
+  /** uploads only */
+  status?: 'processing' | 'ready' | 'failed';
+  stage?: string;
+  progress?: number;
+  error?: string;
+  problems?: string[];
+}
+
+const MODEL_KEY = 'upc-energy-model';
+export const DEFAULT_MODEL = 'standard';
+const readModelPref = (): string => {
+  try {
+    return localStorage.getItem(MODEL_KEY) || DEFAULT_MODEL;
+  } catch {
+    return DEFAULT_MODEL;
+  }
+};
+
 interface SimStore {
+  /** model selector */
+  models: ModelInfo[];
+  modelId: string;
+  modelLoading: boolean;
+  /** false when the dev middleware (uploads) is not reachable, e.g. a static deploy */
+  uploadsOn: boolean;
+  modelToast: { kind: 'error' | 'ok'; text: string } | null;
+  loadModels: () => Promise<void>;
+  setModel: (id: string) => Promise<void>;
+  deleteModel: (id: string) => Promise<void>;
+  setModelToast: (t: { kind: 'error' | 'ok'; text: string } | null) => void;
   campus: CampusData | null;
   ground: GroundData | null;
   network: Network | null;
@@ -217,6 +258,71 @@ const DEFAULT_LAYERS: Record<LayerId, boolean> = {
 const prefs = loadPrefs();
 
 export const useSim = create<SimStore>((set, get) => ({
+  models: [],
+  modelId: DEFAULT_MODEL,
+  modelLoading: false,
+  uploadsOn: false,
+  modelToast: null,
+  setModelToast: (t) => set({ modelToast: t }),
+  loadModels: async () => {
+    let built: ModelInfo[] = [];
+    let up: ModelInfo[] = [];
+    let uploadsOn = false;
+    try {
+      built = await fetch('/data/models/index.json').then((x) => (x.ok ? x.json() : []));
+    } catch {
+      /* no built-in index: only the default model exists */
+    }
+    try {
+      const r = await fetch('/api/models');
+      if (r.ok && (r.headers.get('content-type') ?? '').includes('json')) {
+        up = ((await r.json()) as ModelInfo[]).map((m) => ({ ...m, builtin: false, available: m.status === 'ready' }));
+        uploadsOn = true;
+      }
+    } catch {
+      /* static deploy: uploads unavailable */
+    }
+    if (!built.length) built = [{ id: DEFAULT_MODEL, name: 'Standard MPC', builtin: true, available: true, url: '/data/replay.json' }];
+    set({ models: [...built, ...up], uploadsOn });
+  },
+  setModel: async (id) => {
+    const s = get();
+    const m = s.models.find((x) => x.id === id);
+    if (!m || !m.available) return;
+    set({ modelLoading: true });
+    try {
+      let replay = s.replay;
+      if (m.id !== 'none') {
+        const url = m.builtin ? (m.url ?? '/data/replay.json') : `/api/models/${m.id}/replay`;
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`${m.name}: replay not available (HTTP ${r.status})`);
+        replay = ((await r.json()) as { weeks: ReplayWeek[] }).weeks;
+      } else if (!replay) {
+        throw new Error('data not loaded yet');
+      }
+      set({ replay, modelId: id, agent: id === 'none' ? 'none' : 'mpc' });
+      try {
+        localStorage.setItem(MODEL_KEY, id);
+      } catch {
+        /* not remembered */
+      }
+      recompute(set, get);
+    } catch (e) {
+      set({ modelToast: { kind: 'error', text: `Could not switch model: ${e instanceof Error ? e.message : String(e)}` } });
+    } finally {
+      set({ modelLoading: false });
+    }
+  },
+  deleteModel: async (id) => {
+    try {
+      const r = await fetch(`/api/models/${id}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (get().modelId === id) await get().setModel(DEFAULT_MODEL);
+      await get().loadModels();
+    } catch (e) {
+      set({ modelToast: { kind: 'error', text: `Could not delete the model: ${e instanceof Error ? e.message : String(e)}` } });
+    }
+  },
   campus: null,
   ground: null,
   network: null,
@@ -285,6 +391,17 @@ export const useSim = create<SimStore>((set, get) => ({
       // open at "now", in the history part
       set({ campus, ground: g as GroundData, network: n as Network, replay, solar, nowH, tMin: nowH * 60 });
       recompute(set, get);
+      await get().loadModels();
+      const saved = readModelPref();
+      if (saved !== DEFAULT_MODEL) {
+        if (get().models.some((m) => m.id === saved && m.available)) await get().setModel(saved);
+        else
+          try {
+            localStorage.removeItem(MODEL_KEY);
+          } catch {
+            /* ignore */
+          }
+      }
     } catch (e) {
       set({ loadError: String(e) });
     }
@@ -533,11 +650,14 @@ function recompute(set: Setter, get: () => SimStore): void {
   const input: WeekInput = { start: week.start, ms: week.ms, load: week.load, pv: pvTot, price: week.price, co2: week.co2 };
   const none = simulateWeek(input, { capacityKwh: 1, powerKw: 0, eta: 1 }, 'none');
   const spec = fleetSpec(effectiveBatteries(s));
-  const mpc = spec ? simulateWeek(input, spec, 'mpc') : null;
+  // an external model's recorded setpoints are only meaningful on the battery they were recorded for (the 2 MWh / 500 kW challenge unit)
+  const ext = s.modelId !== DEFAULT_MODEL && s.modelId !== 'none' ? actual.mpc.sp : undefined;
+  const override = ext && spec && spec.capacityKwh === CHALLENGE_SPEC.capacityKwh && spec.powerKw === CHALLENGE_SPEC.powerKw && Math.abs(spec.eta - CHALLENGE_SPEC.eta) < 1e-9 ? ext : undefined;
+  const mpc = spec ? simulateWeek(input, spec, 'mpc', { override }) : null;
   const template = spec ? simulateWeek(input, spec, 'template') : null;
   const chosen = (s.agent === 'mpc' ? mpc : s.agent === 'template' ? template : none) ?? none;
   // the real campus for the same week: measured PV of the as-built plant, the as-built battery under the MPC agent
-  const realSim = simulateWeek({ ...input, pv: week.pv }, CHALLENGE_SPEC, 'mpc').metrics;
+  const realSim = simulateWeek({ ...input, pv: week.pv }, CHALLENGE_SPEC, 'mpc', { override: ext }).metrics;
   const chosenM = chosen.metrics;
   derived.current = {
     totals: {

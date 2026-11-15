@@ -144,7 +144,7 @@ export function LiveHud() {
           </div>
         </div>
       )}
-      <div className="pointer-events-auto absolute inset-x-4 bottom-[132px] z-30 flex justify-center">
+      <div className="pointer-events-auto absolute inset-x-4 bottom-4 z-30 flex justify-center">
         <div className="card fade-in w-full max-w-[760px] px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <span className="eyebrow">{caption?.kicker ?? 'Live simulation'}</span>

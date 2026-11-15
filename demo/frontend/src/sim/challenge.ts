@@ -105,6 +105,11 @@ export interface MpcOptions {
   horizon?: number;
 }
 
+/** External model (uploaded / built-in Python agent): its recorded hourly setpoints replace the TS agent (kind 'mpc' only). */
+export interface ExternalOptions {
+  override?: ArrayLike<number>;
+}
+
 export class MpcAgent {
   private readonly grid: Float64Array;
   private readonly step: number;
@@ -331,13 +336,29 @@ export interface SimResult {
   metrics: Metrics;
 }
 
+/** Narrator reason for a recorded setpoint: action from its sign, price/CO2 position inside the known window. */
+function externalReason(sp: number, obs: Obs): Reason {
+  const win = (a: Float64Array) => {
+    let m = 0;
+    let below = 0;
+    for (const v of a) m += v;
+    m /= Math.max(1, a.length);
+    for (const v of a) if (v < a[0]) below++;
+    return { rel: m ? (a[0] - m) / m : 0, rank: a.length > 1 ? below / (a.length - 1) : 0.5 };
+  };
+  const p = win(obs.prices);
+  const c = win(obs.co2s);
+  return { action: sp > 1 ? 'charge' : sp < -1 ? 'discharge' : 'hold', rank: (p.rank * 0.3 + c.rank * 0.7), priceVsMean: p.rel, co2VsMean: c.rel, guard: false };
+}
+
 /** Re-implementation of sim.simulator.simulate() for one whole-week block. */
-export function simulateWeek(week: WeekInput, spec: BatterySpec, kind: AgentKind, opts: MpcOptions = {}): SimResult {
+export function simulateWeek(week: WeekInput, spec: BatterySpec, kind: AgentKind, opts: MpcOptions & ExternalOptions = {}): SimResult {
   const n = week.load.length;
   const t0 = startMs(week.start);
   const price = Float64Array.from(week.price as ArrayLike<number>);
   const co2 = Float64Array.from(week.co2 as ArrayLike<number>);
-  const mpc = kind === 'mpc' ? new MpcAgent(spec, opts) : null;
+  const ext = kind === 'mpc' ? opts.override : undefined;
+  const mpc = kind === 'mpc' && !ext ? new MpcAgent(spec, opts) : null;
   const look = opts.horizon ?? 24;
 
   const sp = new Float64Array(n);
@@ -367,6 +388,9 @@ export function simulateWeek(week: WeekInput, spec: BatterySpec, kind: AgentKind
     if (mpc) {
       req = mpc.act(obs);
       reason = mpc.lastReason;
+    } else if (ext) {
+      req = ext[i];
+      reason = externalReason(req, obs);
     } else if (kind === 'template') {
       [req, reason] = templateAct(obs, spec);
     }
