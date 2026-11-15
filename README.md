@@ -68,6 +68,19 @@ npm run validate     # proves the TS engine matches the Python results on all 35
 
 Details: [`demo/frontend/README.md`](demo/frontend/README.md).
 
+### Screenshots
+
+| | |
+|---|---|
+| ![3D campus map with the battery's suggested action](docs/screenshots/map-3d-overview.webp) | ![Building detail panel with demand and solar](docs/screenshots/building-detail.webp) |
+| **Live 3D campus map** | **Building detail** |
+| ![Battery yard with the simulated Megapack](docs/screenshots/battery-yard.webp) | ![Impact of a simulated battery on CO2 and cost](docs/screenshots/simulated-impact.webp) |
+| **Battery yard** | **Simulated impact vs the real campus** |
+| ![Solar panel health and output for one building](docs/screenshots/solar-panels.webp) | ![Forecast generation with the charts panel open](docs/screenshots/forecast-charts.webp) |
+| **Solar panels per roof** | **Forecast and charts** |
+| ![Building demand heat map with the legend](docs/screenshots/demand-heatmap.webp) | ![Battery catalogue with payback per unit](docs/screenshots/equipment-catalogue.webp) |
+| **Demand heat map** | **Equipment catalogue** |
+
 ## Challenge rules in short
 
 - Battery 2,000 kWh, ±500 kW, 90 % round trip, no export revenue. Infractions are penalised — every `act()` goes through a safe clamp, and we report `violations=0` everywhere.
