@@ -12,7 +12,7 @@ import Settings, { type SettingsTab } from './components/Settings';
 import SideFrame from './components/SideFrame';
 import { useSim } from './store/useSim';
 import { useDark } from './lib/theme';
-import { closeCharts, panelHover } from './lib/chartsHover';
+import { closeCharts } from './lib/chartsHover';
 import { LiveHud, LiveRunner } from './live/LiveOverlay';
 import { ManualFaultAlert } from './live/ManualFaultAlert';
 import { openFaultPanel, useFaultAlerts } from './live/faultAlertStore';
@@ -98,7 +98,7 @@ export default function App() {
                 <TimeBar />
               </div>
               {pinned && (
-                <section onPointerEnter={panelHover.enter} onPointerLeave={panelHover.leave} className="min-h-0 flex-1 border-t border-[var(--border)] bg-[var(--bg)] p-2" aria-label="Timeline charts">
+                <section className="min-h-0 flex-1 border-t border-[var(--border)] bg-[var(--bg)] p-2" aria-label="Timeline charts">
                   <ChartGrid />
                 </section>
               )}

@@ -1,11 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Pause, Pin, PinOff, Play, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pause, Play, Sparkles } from 'lucide-react';
 import { derived, useSim, visibleLimitH } from '../store/useSim';
 import { ForecastCard } from './ForecastCard';
 import { useAlarms } from '../lib/alarms';
 import { fmtKw, weekMsAt } from '../lib/format';
 import { Seg } from './kit';
-import { DWELL_OPEN_MS, stripHover, togglePin } from '../lib/chartsHover';
+import { toggleCharts } from '../lib/chartsHover';
 import { SOURCE, weekMix, type Source } from '../lib/supply';
 
 const DAY = 86_400_000;
@@ -26,8 +26,7 @@ export default function TimeBar() {
   const showActual = useSim((s) => s.showActual);
   const stage = useSim((s) => s.fcStage);
   const reveal = useSim((s) => s.fcReveal);
-  const pinned = useSim((s) => s.chartsPinned);
-  const dwelling = useSim((s) => s.chartsDwell);
+  const expanded = useSim((s) => s.chartsPinned || s.chartsOpen);
   const [cardOpen, setCardOpen] = useState(false);
   useEffect(() => {
     if (stage === 'running') setCardOpen(true);
@@ -131,20 +130,8 @@ export default function TimeBar() {
 
   return (
     <div
-      className="group/tb pointer-events-auto relative flex w-full items-stretch gap-4 px-4 py-3"
-      onPointerEnter={stripHover.enter}
-      onPointerMove={stripHover.move}
-      onPointerLeave={stripHover.leave}
-      onPointerDownCapture={stripHover.down}
+      className="pointer-events-auto relative flex w-full items-stretch gap-4 px-4 py-3"
     >
-      {/* dwell hint: a thin bar filling along the top border while the pointer rests here */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] overflow-hidden rounded-t-[inherit]" aria-hidden>
-        <div
-          className="h-full bg-[var(--accent)]"
-          style={{ width: dwelling ? '100%' : '0%', opacity: dwelling ? 0.8 : 0, transition: dwelling ? `width ${DWELL_OPEN_MS}ms linear` : 'none' }}
-        />
-      </div>
-      {/* secondary control: the panel opens on a long hover; pin keeps it open regardless of hover (Esc / click again to close) */}
       {/* transport */}
       <div className="flex shrink-0 items-center gap-1.5">
         <button type="button" onClick={() => st.setPlaying(!playing)} className={`icon-btn ${playing ? 'on' : ''}`} aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause' : 'Play'}>
@@ -321,16 +308,6 @@ export default function TimeBar() {
 
       <div className="flex shrink-0 flex-col items-end justify-center gap-2">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={togglePin}
-            className={`icon-btn !h-[26px] !w-[26px] shrink-0 border border-[var(--border-strong)] bg-[var(--surface)] ${pinned ? 'on' : ''}`}
-            aria-label={pinned ? 'Unpin charts' : 'Pin charts open'}
-            aria-pressed={pinned}
-            title={pinned ? 'Unpin charts (Esc)' : 'Pin charts open'}
-          >
-            {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-          </button>
           <Seg
             label="Timeline zoom"
             value={zoom}
@@ -340,6 +317,16 @@ export default function TimeBar() {
               ['day', 'Day'],
             ]}
           />
+          <button
+            type="button"
+            onClick={toggleCharts}
+            className={`icon-btn !h-[26px] !w-[26px] shrink-0 border border-[var(--border-strong)] bg-[var(--surface)] ${expanded ? 'on' : ''}`}
+            aria-label={expanded ? 'Collapse charts' : 'Expand charts'}
+            aria-pressed={expanded}
+            title={expanded ? 'Collapse charts (Esc)' : 'Expand charts'}
+          >
+            {expanded ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+          </button>
         </div>
         {nowH != null && (
           <div className="flex items-center justify-end gap-3 whitespace-nowrap leading-none">
