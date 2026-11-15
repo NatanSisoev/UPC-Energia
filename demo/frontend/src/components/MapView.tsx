@@ -516,7 +516,6 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
           <span className="h-2.5 w-2.5 rounded-sm" style={{ background: `rgb(${heatColor(heat[b] ?? 0).join(',')})` }} />
           <b className="text-[13px]">{f.short}</b>
           {broken && <span className="badge badge-crit">PV fault</span>}
-          {snap.forecast && <span className="badge badge-fc">forecast</span>}
         </div>
         <div className="mt-0.5 max-w-[260px] truncate text-[11.5px] muted">{f.name}</div>
         <div className="mt-2 grid grid-cols-3 gap-3 text-[12px]">
