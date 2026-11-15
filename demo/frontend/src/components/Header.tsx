@@ -8,7 +8,7 @@ import Calendar from './Calendar';
 import ModeIndicator from './ModeIndicator';
 
 /** Top bar: identity, calendar, live figures, alarms and settings. */
-export default function Header({ onSettings, onAlarms, onChat, side }: { onSettings: () => void; onAlarms: () => void; onChat: () => void; side: 'chat' | 'alarms' | 'building' | null }) {
+export default function Header({ onSettings, onAlarms, onChat, side }: { onSettings: () => void; onAlarms: () => void; onChat: () => void; side: 'chat' | 'alarms' | 'building' | 'fault' | null }) {
   const alarmsOpen = side === 'alarms';
   const snap = useSim((s) => s.snap);
   const alarms = useAlarms();

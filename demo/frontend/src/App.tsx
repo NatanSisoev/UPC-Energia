@@ -5,6 +5,7 @@ import ChartGrid from './components/ChartGrid';
 import Header from './components/Header';
 import Assistant from './components/Assistant';
 import AlarmPanel from './components/AlarmPanel';
+import FaultPanel from './components/FaultPanel';
 import BuildingPanel from './components/BuildingPanel';
 import AssetPanel from './components/AssetPanel';
 import Settings, { type SettingsTab } from './components/Settings';
@@ -13,8 +14,9 @@ import { useSim } from './store/useSim';
 import { useDark } from './lib/theme';
 import { closeCharts, panelHover } from './lib/chartsHover';
 import { LiveHud, LiveRunner } from './live/LiveOverlay';
+import { ManualFaultAlert } from './live/ManualFaultAlert';
 
-export type Side = 'chat' | 'alarms' | 'building' | null;
+export type Side = 'chat' | 'alarms' | 'building' | 'fault' | null;
 
 /**
  * Layout: header · map with the timeline underneath · right sidebar (assistant chat, alarm list, or the history of
@@ -75,6 +77,7 @@ export default function App() {
           <MapView dark={dark} onAlarms={() => setSide('alarms')} />
           <LiveRunner />
           <LiveHud />
+          <ManualFaultAlert onOpen={() => setSide('fault')} />
           {ready && (
             <div className="pointer-events-none absolute inset-x-4 bottom-4 z-10">
               <TimeBar />
@@ -103,6 +106,7 @@ export default function App() {
                 }}
               />
             )}
+            {side === 'fault' && <FaultPanel onClose={() => setSide(null)} onAlarms={() => setSide('alarms')} onConfigure={() => setSettings('faults')} />}
             {side === 'alarms' && <AlarmPanel onClose={() => setSide(null)} onConfigure={() => setSettings('faults')} />}
             {side === 'chat' && <Assistant onOpenAlarms={() => setSide('alarms')} onClose={() => setSide(null)} pending={pending} onPendingDone={() => setPending(null)} />}
           </SideFrame>
