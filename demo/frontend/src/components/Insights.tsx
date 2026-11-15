@@ -1,20 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { create } from 'zustand';
 import { useSim } from '../store/useSim';
-import { CHALLENGE_SPEC, simulateWeek } from '../sim/challenge';
-import { actionByHour, buildProfiles, horizonSweep, sizeSweep, toInput, weightSweep, type ActionByHour, type SweepPoint } from '../sim/insights';
-import { Slider } from './ui';
+import { actionByHour, buildProfiles, horizonSweep, type ActionByHour, type SweepPoint } from '../sim/insights';
 
 /** Data-insights view: real figures from replay.json plus re-runs of the challenge-exact agent. */
 
-export type InsightTab = 'prices' | 'solar' | 'agent' | 'horizon' | 'whatif';
+export type InsightTab = 'prices' | 'solar' | 'agent' | 'horizon';
 export const INSIGHT_TABS: Array<{ id: InsightTab; label: string; icon: string }> = [
   { id: 'prices', label: 'Price & CO₂', icon: '💶' },
   { id: 'solar', label: 'Solar & demand', icon: '☀️' },
   { id: 'agent', label: 'What the agent does', icon: '🧠' },
   { id: 'horizon', label: 'Why 24 h', icon: '🔭' },
-  { id: 'whatif', label: 'What-if', icon: '🎛️' },
 ];
 
 export const useInsightsUi = create<{ tab: InsightTab; setTab: (t: InsightTab) => void }>((set) => ({ tab: 'prices', setTab: (tab) => set({ tab }) }));
@@ -82,7 +79,6 @@ export default function Insights() {
         {tab === 'solar' && <SolarTab prof={prof} />}
         {tab === 'agent' && <AgentTab />}
         {tab === 'horizon' && <HorizonTab />}
-        {tab === 'whatif' && <WhatIfTab />}
       </div>
     </div>
   );
@@ -293,92 +289,6 @@ function HorizonTab() {
         <Takeaway>
           With <B>6 h</B> of look-ahead the agent already reaches <B>{Math.round((100 * at(6).score) / s24)} %</B> of the 24 h score, with <B>12 h</B> <B>{((100 * at(12).score) / s24).toFixed(1)} %</B>; going on to <B>48 h</B> changes the score by{' '}
           <B>{(at(48).score - s24 >= 0 ? '+' : '') + (at(48).score - s24).toFixed(2)}</B>. A 2 MWh / 0.5 MW battery empties or fills within about 8 h, so a day of foresight is plenty — the challenge's 24 h window is not the bottleneck.
-        </Takeaway>
-      </div>
-    </div>
-  );
-}
-
-function WhatIfTab() {
-  const replay = useSim((s) => s.replay)!;
-  const weekIdx = useSim((s) => s.weekIdx);
-  const [co2Share, setCo2Share] = useState(0.7);
-  const live = useMemo(() => {
-    const w = replay[weekIdx];
-    const r = simulateWeek(toInput(w), CHALLENGE_SPEC, 'mpc', { alphaCo2: co2Share, betaCost: 1 - co2Share });
-    return r.metrics;
-  }, [replay, weekIdx, co2Share]);
-  const w = useAsync<SweepPoint[]>((cb) => weightSweep(replay, cb), [replay]);
-  const s = useAsync<SweepPoint[]>((cb) => sizeSweep(replay, cb), [replay]);
-  const wrows = (w.val ?? []).map((p) => ({ share: Math.round(p.x * 100), score: p.score, dCo2: p.dCo2, dCost: p.dCost }));
-  const srows = (s.val ?? []).map((p) => ({ mwh: (CHALLENGE_SPEC.capacityKwh * p.x) / 1000, score: p.score, dCo2: p.dCo2, dCost: p.dCost }));
-  const best = wrows.reduce((b, r) => (r.score > b.score ? r : b), { share: 0, score: -1, dCo2: 0, dCost: 0 });
-  const at = (mwh: number) => srows.find((r) => r.mwh === mwh)?.score ?? 0;
-  const sizeNote = srows.length
-    ? `2 → 4 MWh lifts the mean score from ${at(2).toFixed(2)} to ${at(4).toFixed(2)} (×${(at(4) / Math.max(at(2), 1e-9)).toFixed(1)}), 4 → 8 MWh to ${at(8).toFixed(2)} (×${(at(8) / Math.max(at(4), 1e-9)).toFixed(1)}): more storage pays, with diminishing returns.`
-    : 'computing…';
-  return (
-    <div className="grid h-full min-h-0 grid-cols-[1.1fr_1.4fr_1.4fr] grid-rows-[1fr_auto] gap-2">
-      <div className="panel-flat flex flex-col gap-2 p-3">
-        <div className="text-[12px] font-black text-white">🎛️ Optimiser weight: CO₂ vs cost</div>
-        <p className="text-[10.5px] font-semibold leading-snug text-slate-400">
-          The agent minimises <i>share × CO₂ + (1 − share) × cost</i> over the next 24 h. The challenge scores <b className="text-white">70 / 30</b>. Drag to re-run the real agent on the week you are replaying.
-        </p>
-        <div className="flex justify-between text-[11px] font-extrabold text-slate-300">
-          <span>CO₂ {Math.round(co2Share * 100)} %</span>
-          <span>Cost {Math.round((1 - co2Share) * 100)} %</span>
-        </div>
-        <Slider min={0} max={1} step={0.05} value={co2Share} accent="#a6e05a" onChange={setCo2Share} />
-        <div className="grid grid-cols-3 gap-1.5 text-center">
-          {[
-            ['ΔCO₂', `${live.dCo2Pct.toFixed(2)} %`, '#7dffb0'],
-            ['ΔCost', `${live.dCostPct.toFixed(2)} %`, '#6fd3ff'],
-            ['Score', live.score.toFixed(2), '#ffc83d'],
-          ].map(([l, v, c]) => (
-            <div key={l} className="panel-flat px-1 py-1.5">
-              <div className="label-caps !text-[9px]">{l}</div>
-              <div className="tnum text-[15px] font-black" style={{ color: c }}>{v}</div>
-            </div>
-          ))}
-        </div>
-        <p className="text-[10px] font-semibold text-slate-500">Week of {replay[weekIdx].start.slice(0, 10)} · violations {live.violations}</p>
-      </div>
-      {w.val ? (
-        <Card title="⚖️ Trade-off across weights" sub="mean of 7 weeks · score uses the challenge 70/30">
-          <ComposedChart data={wrows} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
-            <CartesianGrid stroke="#ffffff12" vertical={false} />
-            <XAxis dataKey="share" tick={tick} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} label={{ value: 'CO₂ share in the optimiser', fill: '#8da0d8', fontSize: 10, position: 'insideBottom', offset: -2 }} />
-            <YAxis tick={tick} axisLine={false} tickLine={false} />
-            <Tooltip formatter={(v) => `${Number(v).toFixed(2)}`} labelFormatter={(v) => `CO₂ share ${v} %`} />
-            <Legend wrapperStyle={{ fontSize: 10, fontWeight: 700 }} verticalAlign="top" />
-            <ReferenceLine x={70} stroke="#ffffff55" strokeDasharray="3 3" />
-            <Line dataKey="dCo2" name="ΔCO₂ %" stroke="#7dffb0" strokeWidth={2.2} dot />
-            <Line dataKey="dCost" name="ΔCost %" stroke="#6fd3ff" strokeWidth={2.2} dot />
-            <Line dataKey="score" name="Challenge score" stroke="#ffc83d" strokeWidth={3} dot />
-          </ComposedChart>
-        </Card>
-      ) : (
-        <Loading prog={w.prog} what="weight sweep" />
-      )}
-      {s.val ? (
-        <Card title="🔋 Bigger battery?" sub="score vs installed MWh (power = 0.25 C)">
-          <ComposedChart data={srows} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
-            <CartesianGrid stroke="#ffffff12" vertical={false} />
-            <XAxis dataKey="mwh" tick={tick} tickFormatter={(v) => `${v} MWh`} axisLine={false} tickLine={false} />
-            <YAxis tick={tick} axisLine={false} tickLine={false} domain={[0, 'auto']} />
-            <Tooltip formatter={(v) => Number(v).toFixed(2)} labelFormatter={(v) => `${v} MWh`} />
-            <ReferenceLine x={2} stroke="#a6e05a" strokeDasharray="3 3" label={{ value: 'challenge: 2 MWh', fill: '#a6e05a', fontSize: 10, position: 'insideTopLeft' }} />
-            <Line dataKey="score" name="Mean score" stroke="#ffc83d" strokeWidth={3} dot={{ r: 4 }} />
-            <Scatter dataKey="score" fill="#ffc83d" />
-          </ComposedChart>
-        </Card>
-      ) : (
-        <Loading prog={s.prog} what="battery-size sweep" />
-      )}
-      <div className="col-span-3">
-        <Takeaway>
-          The score is best when the optimiser's own weight matches the 70/30 scoring (here <B>{best.share} % CO₂</B>, score {best.score.toFixed(2)}); optimising one signal alone gives up the other. The size curve shows the battery, not the algorithm, is the
-          limit: {sizeNote}
         </Takeaway>
       </div>
     </div>

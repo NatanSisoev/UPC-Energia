@@ -162,8 +162,9 @@ export default function Assistant({ onOpenAlarms, onClose, pending, onPendingDon
   // greeting once the data is in
   useEffect(() => {
     if (ready && msgs.length === 0) {
-      setMsgs((m) => (m.length ? m : [{ role: 'bot', text: `Hi! I'm the Campus Nord energy assistant. Ask me about any moment of the week — the map and the timeline show **${hourLabel(useSim.getState().snap!.hour)}**.`, stream: true }]));
+      setMsgs((m) => (m.length ? m : [{ role: 'bot', text: `Hi! I'm the UPC Energia assistant. Ask me about any moment of the week — the map and the timeline show **${hourLabel(useSim.getState().snap!.hour)}**.`, stream: !pending }])); // already in place when a question is handed over, so only the answer types out
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, msgs.length]);
 
   // pre-compute catalogue payback in the background so price questions can quote it

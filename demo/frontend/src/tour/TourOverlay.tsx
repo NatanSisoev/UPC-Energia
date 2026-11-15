@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ChevronLeft, ChevronRight, StickyNote, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Insights from '../components/Insights';
 import { useSim } from '../store/useSim';
 import { setNavigator } from './actions';
@@ -13,9 +13,13 @@ const txt = (t: Text, f: TF) => (typeof t === 'function' ? t(f) : t);
 /** Mounted once in the router root (so it survives the /catalogue page). Keyboard, caption card, spotlight, covers. */
 export default function TourOverlay() {
   const navigate = useNavigate();
-  const { active, idx, sub, notesOpen, busy } = useTour();
+  const { active, idx, sub } = useTour();
   const [, force] = useState(0);
   const [tlH, setTlH] = useState(0);
+  // the pill can be dragged anywhere; the offset from its default corner survives beat changes and is clamped to the window
+  const [off, setOff] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
+  const pill = useRef<HTMLDivElement>(null);
   useSim((s) => s.version);
   useSim((s) => s.snap?.hour);
 
@@ -28,18 +32,18 @@ export default function TourOverlay() {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
       const t = useTour.getState();
-      if (!t.active) {
-        if (e.key === 't' || e.key === 'T') t.start();
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        t.toggle();
         return;
       }
+      if (!t.active) return;
       const stop = () => {
         e.preventDefault();
         e.stopImmediatePropagation();
       };
       if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') (stop(), t.next());
       else if (e.key === 'ArrowLeft' || e.key === 'PageUp') (stop(), t.prev());
-      else if (e.key === 'Escape') (stop(), t.stop());
-      else if (e.key === 'n' || e.key === 'N') (stop(), t.toggleNotes());
       else if (/^[1-9]$/.test(e.key) && Number(e.key) <= STEPS.length) (stop(), t.goto(Number(e.key) - 1));
     };
     const onUp = (e: KeyboardEvent) => {
@@ -70,11 +74,9 @@ export default function TourOverlay() {
   const clicks = step.clicks ?? [];
   const f = tourFacts();
   const cover = step.cover?.(sub) ?? null;
-  const now = sub === 0 ? step.action : clicks[sub - 1].action;
   const spot = sub === 0 ? step.spot : (clicks[sub - 1].spot ?? step.spot);
   const nextClick = clicks[sub];
-  const nextLabel = nextClick ? `Next: ${nextClick.label}` : idx < STEPS.length - 1 ? `Next beat: ${STEPS[idx + 1].short}` : 'Finish';
-  const lastOfBeat = sub === clicks.length;
+  const atEnd = !nextClick && idx === STEPS.length - 1;
 
   return (
     <>
@@ -87,60 +89,20 @@ export default function TourOverlay() {
       {cover === 'facts' && f && <FactsCover f={f} />}
       {spot && !cover && <Spot selector={spot} key={`${idx}-${sub}`} />}
 
-      <div className="pointer-events-none fixed left-4 z-[70] w-[min(440px,calc(100vw-32px))]" style={{ bottom: Math.max(16, tlH + 12) }}>
-        <div key={`${idx}-${sub}`} className="tour-card pointer-events-auto rounded-[12px] border border-[var(--border-strong)] bg-[var(--surface)] p-3.5" style={{ boxShadow: 'var(--shadow-lg)' }} role="dialog" aria-label="Guided tour">
-          {/* beat tracker */}
-          <div className="mb-2.5 flex items-center gap-1" aria-label={`Beat ${idx + 1} of ${STEPS.length}`}>
-            {STEPS.map((s, i) => (
-              <button key={s.id} type="button" title={`${i + 1}. ${s.short}`} onClick={() => useTour.getState().goto(i)} className="h-[5px] flex-1 rounded-full" style={{ background: i < idx ? 'var(--accent)' : i === idx ? 'var(--accent)' : 'var(--surface-3)', opacity: i < idx ? 0.45 : 1 }} />
-            ))}
-            <span className="tnum ml-1.5 text-[10.5px] muted">
-              {idx + 1} / {STEPS.length}
-            </span>
-            <button type="button" className="icon-btn !h-6 !w-6" onClick={() => useTour.getState().stop()} aria-label="Exit tour (Esc)" title="Exit tour (Esc)">
-              <X size={13} />
-            </button>
-          </div>
-          <div className="eyebrow !text-[10px] !text-[var(--accent)]">{step.kicker}</div>
-          <div className="mt-0.5 text-[16px] font-semibold leading-snug">{f ? txt(step.title, f) : step.short}</div>
-          {f && (
-            <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug muted">
-              {step.bullets(f).slice(0, 3).map((b) => (
-                <li key={b} className="flex gap-2">
-                  <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[var(--accent)]" />
-                  <span>{b}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {f && (
-            <div className="mt-2 flex items-center gap-2 rounded-md bg-[var(--accent-soft)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--accent)]">
-              {busy && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)]" />}
-              <span className="min-w-0">{txt(now, f)}</span>
-            </div>
-          )}
-          {lastOfBeat && idx < STEPS.length && (
-            <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--border-strong)] px-2.5 py-1 text-[11.5px] italic muted">
-              <ChevronRight size={12} className="shrink-0" /> <span className="truncate">{step.bridge}</span>
-            </div>
-          )}
-          {notesOpen && (
-            <p className="mt-2 border-t border-[var(--border)] pt-2 text-[11.5px] leading-snug" style={{ color: 'var(--warn)' }}>
-              <b>Notes</b> · {step.notes}
-            </p>
-          )}
-          <div className="mt-3 flex items-center gap-2">
-            <button type="button" className="btn !px-2 !py-1 !text-[12px]" onClick={() => useTour.getState().prev()} disabled={idx === 0 && sub === 0} aria-label="Back">
-              <ChevronLeft size={14} />
-            </button>
-            <button type="button" className="btn-primary !py-1 !text-[12px]" onClick={() => useTour.getState().next()}>
-              {nextLabel} <ChevronRight size={14} />
-            </button>
-            <button type="button" className={`icon-btn ${notesOpen ? 'on' : ''}`} onClick={() => useTour.getState().toggleNotes()} title="Speaker notes (N)" aria-label="Speaker notes">
-              <StickyNote size={14} />
-            </button>
-            <span className="ml-auto text-[10px] faint">← → space · N notes · 1-9 beat · Esc</span>
-          </div>
+      <div ref={pill} className="pointer-events-none fixed left-4 z-[70] w-[min(420px,calc(100vw-32px))]" style={{ bottom: Math.max(16, tlH + 12), transform: `translate(${off.x}px, ${off.y}px)` }}>
+        <div key={`${idx}-${sub}`} className="tour-card pointer-events-auto flex cursor-grab touch-none select-none items-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--surface)] py-1.5 pl-3.5 pr-1.5 active:cursor-grabbing" onPointerDown={(e) => { if ((e.target as HTMLElement).closest('button')) return; drag.current = { px: e.clientX, py: e.clientY, ox: off.x, oy: off.y }; e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={(e) => { const d = drag.current; const r = pill.current?.getBoundingClientRect(); if (!d || !r) return; const nx = d.ox + e.clientX - d.px; const ny = d.oy + e.clientY - d.py; const dx = nx - off.x; const dy = ny - off.y; const x = Math.min(window.innerWidth - 40, Math.max(40 - r.width, r.left + dx)) - (r.left - off.x); const y = Math.min(window.innerHeight - 20, Math.max(0, r.top + dy)) - (r.top - off.y); setOff({ x, y }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} style={{ boxShadow: 'var(--shadow-lg)' }} role="dialog" aria-label="Guided tour">
+          <span className="tnum shrink-0 text-[11px] font-semibold text-[var(--accent)]" aria-label={`Beat ${idx + 1} of ${STEPS.length}`}>
+            {idx + 1}/{STEPS.length}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold" title={f ? txt(step.title, f) : step.short}>
+            {f ? txt(step.title, f) : step.short}
+          </span>
+          <button type="button" className="icon-btn !h-7 !w-7 shrink-0" onClick={() => useTour.getState().prev()} disabled={idx === 0 && sub === 0} aria-label="Back">
+            <ChevronLeft size={15} />
+          </button>
+          <button type="button" className="btn-primary !h-7 !w-7 shrink-0 !p-0" onClick={() => useTour.getState().next()} disabled={atEnd} aria-label="Next">
+            <ChevronRight size={15} />
+          </button>
         </div>
       </div>
     </>
@@ -166,7 +128,7 @@ function Spot({ selector }: { selector: string }) {
 
 function Slide({ children, label }: { children: React.ReactNode; label: string }) {
   return (
-    <div className="tour-fade fixed inset-0 z-[55] flex items-center justify-center p-10" style={{ background: 'var(--bg)' }} aria-label={label}>
+    <div className="tour-fade fixed inset-x-0 bottom-0 top-[58px] z-[55] flex items-center justify-center p-10" style={{ background: 'var(--bg)' }} aria-label={label}>
       {children}
     </div>
   );

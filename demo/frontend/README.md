@@ -1,4 +1,4 @@
-# Campus Nord Energy Twin — demo frontend
+# UPC Energia — demo frontend
 
 Game-style 3D digital twin of UPC Campus Nord that replays real challenge weeks and lets the audience change the campus (solar, battery) and watch the real
 challenge agent and score react. Stack: Vite 8 · React 19 · TypeScript · deck.gl 9 (standalone `Deck`, no basemap tiles) · Tailwind 4 · zustand · recharts · Nunito (bundled).

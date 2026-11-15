@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /*
- * UPC Campus Nord energy monitor — institutional (upc.edu blue) but technical: hairline borders, monospaced
+ * UPC Energia — institutional (upc.edu blue) but technical: hairline borders, monospaced
  * numerics, small uppercase labels. Light and dark themes are pure token swaps ([data-theme] on <html>).
  */
 @theme {
@@ -157,6 +157,75 @@ body,
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
+}
+/* time-bar transport: pill with a prominent round play button */
+.tb-play,
+.tb-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.tb-play {
+  width: 36px;
+  height: 36px;
+  background: var(--accent);
+  color: #fff;
+}
+.tb-play:hover {
+  transform: scale(1.06);
+}
+.tb-play.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.tb-step {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  color: var(--text-muted, var(--text));
+}
+.tb-step:hover {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.tb-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.tb-speed-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tb-speed-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.tb-speed-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 .btn {
   display: inline-flex;

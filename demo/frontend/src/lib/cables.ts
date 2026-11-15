@@ -4,7 +4,7 @@
  * are pushed through the cable tree (scene/network.ts edgeFlows), hour by hour. Cached per derived/config.
  */
 import { derived, useSim } from '../store/useSim';
-import { edgeFlows } from '../scene/network';
+import { cutNodes, edgeFlows } from '../scene/network';
 import { buildingSolarKw, DEFAULT_TILT, PV_ASBUILT_KWP } from '../sim/engine';
 
 let cache: { key: unknown; flows: Float64Array[]; solarOut: Float64Array } = { key: null, flows: [], solarOut: new Float64Array(0) };
@@ -22,10 +22,12 @@ export function weekCableFlows(): Float64Array[] {
   const out: Float64Array[] = [];
   const solarOut = new Float64Array(n);
   const nn = new Float64Array(net.nodes.length);
+  const cut = cutNodes(net, s.faults.cables); // buildings / battery without supply: they draw and feed nothing
   for (let h = 0; h < n; h++) {
     const yieldKw = d.week.pv[h] / PV_ASBUILT_KWP;
     nn.fill(0);
     net.nodes.forEach((nd, i) => {
+      if (cut.has(i)) return;
       if (nd.kind === 'bld') {
         const p = props[nd.b];
         const cfg = s.solar[p.osmId] ?? { on: false, fraction: 0, tilt: DEFAULT_TILT };

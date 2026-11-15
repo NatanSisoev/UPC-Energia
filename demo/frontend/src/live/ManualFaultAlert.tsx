@@ -28,7 +28,7 @@ export function ManualFaultAlert({ onOpen }: { onOpen: () => void }) {
     lastSent.current = Date.now();
     void sendFaultAlert(
       `SIMULATED fault: ${items.map((i) => i.title).join('; ')}`,
-      `${items.map((i) => `${i.line}\nSimulated time: ${i.at}\nProposed solution: ${solutionOf(i)}`).join('\n\n')}\n\nThis is a SIMULATED fault injected manually in the UPC Campus Nord energy twin, not a real incident.`,
+      `${items.map((i) => `${i.line}\nSimulated time: ${i.at}\nProposed solution: ${solutionOf(i)}`).join('\n\n')}\n\nThis is a SIMULATED fault injected manually in UPC Energia, not a real incident.`,
     );
   };
 

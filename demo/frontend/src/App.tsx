@@ -13,7 +13,6 @@ import SideFrame from './components/SideFrame';
 import { useSim } from './store/useSim';
 import { useDark } from './lib/theme';
 import { closeCharts } from './lib/chartsHover';
-import { LiveHud, LiveRunner } from './live/LiveOverlay';
 import { ManualFaultAlert } from './live/ManualFaultAlert';
 import { openFaultPanel, useFaultAlerts } from './live/faultAlertStore';
 import { useUi, type Side } from './store/useUi';
@@ -101,8 +100,6 @@ export default function App() {
         <main className="relative flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
           <MapView dark={dark} onAlarms={() => setSide('alarms')} />
-          <LiveRunner />
-          <LiveHud />
           <ManualFaultAlert onOpen={() => openFaultPanel()} />
           <div className="pointer-events-none absolute bottom-0.5 right-2 z-0 text-[9.5px] faint">© OpenStreetMap contributors · UPC Campus Nord data</div>
           </div>

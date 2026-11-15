@@ -10,7 +10,7 @@
  */
 import type { BatteryUnit, BuildingProps, PanelModelId, SolarCfg } from '../types';
 import { hash } from './scenario';
-import { BATTERY_MODELS, PANEL_MODELS } from './catalogue';
+import { BATTERY_MODELS, PANEL_MODELS, cableMva, type CableModel } from './catalogue';
 import { installedKwp } from '../sim/engine';
 
 export const THIS_YEAR = 2026;
@@ -191,15 +191,17 @@ export interface CableInfo {
   /** buildings fed through the segment (sizes the conductor) */
   down: number;
   flowKw: number;
+  /** catalogue cable installed in place of the original one */
+  model?: CableModel;
 }
 /** thermal rating of a buried 20 kV-class 3-core Al XLPE segment, by how many buildings it feeds (kW) */
-export const cableRatingKw = (down: number) => (down >= 10 ? 9000 : down >= 3 ? 6800 : 5000);
+export const cableRatingKw = (down: number, model?: CableModel) => (model ? cableMva(model) * 1000 : down >= 10 ? 9000 : down >= 3 ? 6800 : 5000);
 
 export function cableSheet(c: CableInfo): AssetSheet {
   const trunk = c.down >= 10;
   const mm2 = trunk ? 240 : c.down >= 3 ? 150 : 95;
-  const ratedKw = cableRatingKw(c.down);
-  const year = 1988 + Math.round(hash(`cab${c.i}`) * 30);
+  const ratedKw = cableRatingKw(c.down, c.model);
+  const year = c.model ? THIS_YEAR : 1988 + Math.round(hash(`cab${c.i}`) * 30);
   const age = THIS_YEAR - year;
   const health = Math.max(0.4, 1 - 0.012 * age);
   const load = Math.abs(c.flowKw) / ratedKw;
@@ -210,7 +212,7 @@ export function cableSheet(c: CableInfo): AssetSheet {
     year,
     estimated: true,
     specs: [
-      { k: 'Conductor', v: `RHZ1 12/20 kV · 3×${mm2} mm² Al XLPE` },
+      { k: 'Conductor', v: c.model ? `${c.model.name} · ${c.model.voltageKv} kV` : `RHZ1 12/20 kV · 3×${mm2} mm² Al XLPE` },
       { k: 'Length', v: `${c.len.toFixed(0)} m` },
       { k: 'Installed', v: `${year} (${age} years)` },
       { k: 'Rating', v: `${(ratedKw / 1000).toFixed(1)} MW` },

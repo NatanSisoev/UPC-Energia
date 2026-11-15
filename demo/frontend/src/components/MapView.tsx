@@ -11,6 +11,7 @@ import { computeMode, useViewMode } from '../lib/mode';
 import EnergyFlow from './EnergyFlow';
 import { toLonLat } from '../scene/geo';
 import { along } from '../scene/network';
+import { CABLE_MODELS } from '../data/catalogue';
 import { cableSheet, panelSheet, pvSheet, gradeColor } from '../data/assets';
 import { fmtKw } from '../lib/format';
 import { modelOf, PV_ASBUILT_KWP, tiltFactor } from '../sim/engine';
@@ -175,6 +176,12 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
     const refit = () => {
       view = fitToBbox(view, bbox, host.clientWidth, host.clientHeight);
       deck.setProps({ viewState: view } as never);
+      // luma resizes the drawing buffer lazily on the next draw; when the panel / sidebar changes the host size while nothing
+      // animates, the old buffer would be stretched over the new area (blank band, shifted map), so force a redraw
+      const cc = (deck as unknown as { _canvasContext?: { setDrawingBufferSize?: (w: number, h: number) => void } })._canvasContext;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      if (host.clientWidth > 0 && host.clientHeight > 0) cc?.setDrawingBufferSize?.(Math.round(host.clientWidth * dpr), Math.round(host.clientHeight * dpr));
+      deck.redraw('host resized');
     };
     refit();
     const ro = new ResizeObserver(refit);
@@ -272,6 +279,7 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
             clock: performance.now() / 1000,
             units: st.batteries.map((u) => ({ id: u.id, kwh: u.capacity * 1000, fault: st.faults.batteries.includes(u.id), sim: m.simUnits.includes(u.id) || !u.asBuilt })),
             faultRoofs: st.faults.roofs,
+            faultCables: st.faults.cables,
             simRoofs: m.simRoofs,
             outage: !!s && !!st.faults.outage && s.hour >= st.faults.outage.startH && s.hour < st.faults.outage.startH + st.faults.outage.hours,
             alarmTargets: active.map((a) => ({ target: a.target!, critical: a.severity === 'critical' })),
@@ -447,7 +455,7 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
         const i = +hover.slice(6);
         const e = world.net?.edges[i];
         if (!e) return null;
-        sheet = cableSheet({ i, len: e.len, down: e.down ?? 1, flowKw: cableFlow(i) });
+        sheet = cableSheet({ i, len: e.len, down: e.down ?? 1, flowKw: cableFlow(i), model: CABLE_MODELS.find((m) => m.id === st.cableModels[i]) });
       } else {
         const id = hover.slice(3);
         const p = campus?.features.find((x) => x.properties.osmId === id)?.properties;
@@ -707,12 +715,12 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
           {/* bottom-left (above the timeline): legend, collapsed to a chip */}
           <div className="absolute bottom-4 left-4 z-10">
             {showLegend || legendOpen ? (
-              <div className="card fade-in w-[220px] p-3" onMouseLeave={() => setLegendOpen(false)}>
+              <div className="card fade-in w-[220px] p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="eyebrow">Legend</span>
                   {!showLegend && (
-                    <button type="button" className="text-[11px] muted hover:text-[var(--accent)]" onClick={() => setLegendOpen(false)}>
-                      hide
+                    <button type="button" className="text-[11px] muted hover:text-[var(--accent)]" onClick={() => setLegendOpen(false)} aria-label="Hide legend">
+                      Hide
                     </button>
                   )}
                 </div>
@@ -740,7 +748,7 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
                 </div>
               </div>
             ) : (
-              <button type="button" className="btn" style={{ boxShadow: 'var(--shadow)' }} onMouseEnter={() => setLegendOpen(true)} onClick={() => setLegendOpen(true)}>
+              <button type="button" className="btn" style={{ boxShadow: 'var(--shadow)' }} onClick={() => setLegendOpen(true)} aria-expanded={false}>
                 <LayersIco size={14} /> Legend
               </button>
             )}

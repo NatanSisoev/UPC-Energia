@@ -16,6 +16,7 @@ interface TourState {
   busy: boolean;
   start: () => void;
   stop: () => void;
+  toggle: () => void;
   next: () => void;
   prev: () => void;
   /** jump to beat `i` (0-based); `sub` = micro-clicks already done (default 0) */
@@ -27,10 +28,10 @@ let token = 0;
 
 export const useTour = create<TourState>((set, get) => {
   /** put the app into position (i, sub); the last item is animated, the replayed ones are instant */
-  async function land(i: number, sub: number): Promise<void> {
+  async function land(i: number, sub: number, smooth = false): Promise<void> {
     const my = ++token;
     set({ idx: i, sub, busy: true });
-    await resetBase();
+    await resetBase(smooth);
     if (my !== token) return;
     const step = STEPS[i];
     const tasks = [step.enter, ...(step.clicks ?? []).slice(0, sub).map((k) => k.run)];
@@ -58,6 +59,7 @@ export const useTour = create<TourState>((set, get) => {
       set({ active: false, busy: false });
       void restore();
     },
+    toggle: () => (get().active ? get().stop() : get().start()),
     next: () => {
       const { idx, sub } = get();
       const clicks = STEPS[idx].clicks ?? [];
@@ -65,8 +67,7 @@ export const useTour = create<TourState>((set, get) => {
         const my = ++token;
         set({ sub: sub + 1 });
         void Promise.resolve(clicks[sub].run({ animate: true })).then(() => my === token && set({ busy: false }));
-      } else if (idx < STEPS.length - 1) void land(idx + 1, 0);
-      else get().stop();
+      } else if (idx < STEPS.length - 1) void land(idx + 1, 0, true);
     },
     prev: () => {
       const { idx, sub } = get();

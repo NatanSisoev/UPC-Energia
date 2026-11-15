@@ -229,3 +229,12 @@ submission.zip
 .venv/
 docs/official/
 *.zip
+
+# --- Submission scratch (probe/NN zips' unpacked sources, local artifacts) ---
+.claude/
+submission1.html
+submission_hard_*/
+submissions/hard/probes/
+submissions/hard/nn/
+submissions/hard/kernel/
+submissions/hard/_base_h10/

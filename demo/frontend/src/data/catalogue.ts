@@ -125,3 +125,36 @@ export const PANEL_MODELS: PanelModel[] = [
 
 /** Substation transformer headroom — total fleet power cannot exceed it. */
 export const SUBSTATION_POWER_LIMIT_MW = 4.5;
+
+export interface CableModel {
+  id: string;
+  name: string;
+  /** network level it is meant for */
+  level: 'LV' | 'MV' | 'DC';
+  conductor: 'Cu' | 'Al';
+  section: string;
+  voltageKv: number;
+  /** continuous current in buried ducts, A */
+  ampacityA: number;
+  /** AC resistance at 90 °C, ohm/km */
+  rOhmKm: number;
+  /** installed cost, EUR per metre (supply + trench + joints) */
+  eurPerM: number;
+  accent: string;
+  note: string;
+}
+
+/** Apparent power the cable carries continuously (MVA; DC cables: MW). */
+export function cableMva(c: CableModel): number {
+  return (c.level === 'DC' ? c.voltageKv * c.ampacityA : Math.sqrt(3) * c.voltageKv * c.ampacityA) / 1000;
+}
+
+/** Indicative catalogue of the cables a campus network is built from (rounded from public manufacturer tables). */
+export const CABLE_MODELS: CableModel[] = [
+  { id: 'lv-al-240', name: 'LV Al 4×240 XLPE', level: 'LV', conductor: 'Al', section: '4×240 mm²', voltageKv: 0.4, ampacityA: 330, rOhmKm: 0.125, eurPerM: 55, accent: '#94a3b8', note: 'Cheapest building feeder; fine for small loads and short runs.' },
+  { id: 'lv-cu-240', name: 'LV Cu 4×240 XLPE', level: 'LV', conductor: 'Cu', section: '4×240 mm²', voltageKv: 0.4, ampacityA: 430, rOhmKm: 0.075, eurPerM: 95, accent: '#f59e0b', note: 'Copper building feeder: lower losses and 30 % more current.' },
+  { id: 'lv-cu-2x240', name: 'LV Cu 2×(4×240) twin', level: 'LV', conductor: 'Cu', section: '2×4×240 mm²', voltageKv: 0.4, ampacityA: 800, rOhmKm: 0.038, eurPerM: 190, accent: '#fb923c', note: 'Two cables in parallel: carries a full 500 kW battery link.' },
+  { id: 'mv-al-150', name: 'MV Al 3×150 XLPE', level: 'MV', conductor: 'Al', section: '3×150 mm²', voltageKv: 20, ampacityA: 320, rOhmKm: 0.206, eurPerM: 70, accent: '#60a5fa', note: 'Standard 20 kV ring cable between the substation and transformer rooms.' },
+  { id: 'mv-cu-240', name: 'MV Cu 3×240 XLPE', level: 'MV', conductor: 'Cu', section: '3×240 mm²', voltageKv: 20, ampacityA: 520, rOhmKm: 0.075, eurPerM: 140, accent: '#38bdf8', note: 'Heavy 20 kV trunk for a larger substation connection.' },
+  { id: 'dc-pv-6', name: 'DC solar H1Z2Z2-K', level: 'DC', conductor: 'Cu', section: '1×6 mm²', voltageKv: 1.5, ampacityA: 70, rOhmKm: 3.39, eurPerM: 1.4, accent: '#34d399', note: 'Roof string cable between panels and inverter.' },
+];

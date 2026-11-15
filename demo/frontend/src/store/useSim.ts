@@ -7,6 +7,7 @@
  * History / forecast: with the forecast split on, hours after "now" use what was knowable at "now"
  * (sim/forecast.ts) and the agent plans on that, exactly as it would live.
  */
+import { cutNodes } from '../scene/network';
 import { create } from 'zustand';
 import type {
   AgentKind,
@@ -61,6 +62,10 @@ export interface Faults {
   batteries: string[];
   /** building osmIds whose PV array is broken */
   roofs: string[];
+  /** cable segment indices (network edges) that are cut */
+  cables: number[];
+  /** derived: the battery yard is cut off from the substation by a cable fault, so all its units are offline */
+  yardCut?: boolean;
   /** simulated grid outage window (hour index in the week) */
   outage: { startH: number; hours: number } | null;
 }
@@ -194,8 +199,13 @@ interface SimStore {
   setPanelUi: (p: Partial<Pick<SimStore, 'panelFocus' | 'panelHover' | 'buildingTab'>>) => void;
   setPanelModel: (id: PanelModelId) => void;
   setSolar: (id: string, patch: Partial<SolarCfg>) => void;
+  /** install `model` on the given roofs; roofs without panels (or when `fillTo` is set) get that roof coverage */
+  applyPanels: (ids: string[], model: PanelModelId, fillTo: number | null) => void;
   solarPreset: (preset: 'off' | 'asbuilt' | 'max') => void;
   installBattery: (modelId: string) => void;
+  /** catalogue cable installed in place of a network segment (edge index -> model id); replacing also repairs a cut */
+  cableModels: Record<number, string>;
+  setCableModel: (edge: number, modelId: string | null) => void;
   updateBattery: (id: string, patch: Partial<BatteryUnit>) => void;
   removeBattery: (id: string) => void;
   /** the bottom timeline is pinned open as a grid of charts (about half the page) */
@@ -359,7 +369,7 @@ export const useSim = create<SimStore>((set, get) => ({
   nowH: 84,
   showActual: prefs.showActual ?? false,
   ageing: false,
-  faults: { batteries: [], roofs: [], outage: null },
+  faults: { batteries: [], roofs: [], cables: [], outage: null },
   alarmCfg: {
     maxDemandKw: 1600,
     priceHigh: 0.25,
@@ -499,11 +509,24 @@ export const useSim = create<SimStore>((set, get) => ({
   },
   setPanelUi: (p) => set(p),
   setPanelModel: (id) => {
-    set({ panelModel: id });
+    // campus-wide swap: drop the per-roof overrides so every roof uses the new technology
+    set((s) => ({ panelModel: id, solar: Object.fromEntries(Object.entries(s.solar).map(([k, c]) => [k, { ...c, model: undefined }])) }));
     recompute(set, get);
   },
   setSolar: (id, patch) => {
     set((s) => ({ solar: { ...s.solar, [id]: { ...s.solar[id], ...patch } } }));
+    recompute(set, get);
+  },
+  applyPanels: (ids, model, fillTo) => {
+    set((s) => {
+      const solar = { ...s.solar };
+      for (const id of ids) {
+        const cur = solar[id] ?? { on: false, fraction: 0, tilt: DEFAULT_TILT };
+        const empty = !cur.on || cur.fraction <= 0;
+        solar[id] = { ...cur, model, on: true, fraction: fillTo != null ? Math.max(cur.fraction, fillTo) : empty ? 0.6 : cur.fraction };
+      }
+      return { solar };
+    });
     recompute(set, get);
   },
   solarPreset: (preset) => {
@@ -520,6 +543,16 @@ export const useSim = create<SimStore>((set, get) => ({
     }
     set({ solar });
     recompute(set, get);
+  },
+  cableModels: {},
+  setCableModel: (edge, modelId) => {
+    set((s) => {
+      const cableModels = { ...s.cableModels };
+      if (modelId) cableModels[edge] = modelId;
+      else delete cableModels[edge];
+      return { cableModels };
+    });
+    if (modelId && get().faults.cables.includes(edge)) get().setFaults({ cables: get().faults.cables.filter((c) => c !== edge) });
   },
   installBattery: (modelId) => {
     set((s) => ({ batteries: [...s.batteries, unit(modelId)] }));
@@ -553,7 +586,11 @@ export const useSim = create<SimStore>((set, get) => ({
     recompute(set, get);
   },
   setFaults: (p) => {
-    set((s) => ({ faults: { ...s.faults, ...p } }));
+    set((s) => {
+      const faults = { ...s.faults, ...p };
+      faults.yardCut = !!s.network && cutNodes(s.network, faults.cables).has(1); // node 1 = battery yard
+      return { faults };
+    });
     recompute(set, get);
   },
   resetScenario: () => {
@@ -566,7 +603,7 @@ export const useSim = create<SimStore>((set, get) => ({
         solar[f.properties.osmId] = { on: has, fraction: has ? cov : 0, tilt: DEFAULT_TILT };
       }
     }
-    set({ batteries: [asBuiltUnit()], panelModel: 'mono', agent: 'mpc', ageing: false, solar, faults: { batteries: [], roofs: [], outage: null } });
+    set({ cableModels: {}, batteries: [asBuiltUnit()], panelModel: 'mono', agent: 'mpc', ageing: false, solar, faults: { batteries: [], roofs: [], cables: [], outage: null } });
     recompute(set, get);
   },
   setAlarmCfg: (p) => {
@@ -613,6 +650,7 @@ function summarize(r: SimResult): WeekSummary {
 
 /** Battery units that are not marked broken. */
 export function workingBatteries(s: Pick<SimStore, 'batteries' | 'faults'>): BatteryUnit[] {
+  if (s.faults.yardCut) return [];
   return s.batteries.filter((b) => !s.faults.batteries.includes(b.id));
 }
 

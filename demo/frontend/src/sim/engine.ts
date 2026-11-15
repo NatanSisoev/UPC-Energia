@@ -122,7 +122,7 @@ export function tiltFactor(tilt: number): number {
 
 /** Installed capacity (kWp) of one building under its config. */
 export function installedKwp(b: BuildingProps, cfg: SolarCfg, panel: PanelModelId): number {
-  return cfg.on ? roofKwp(b, panel) * cfg.fraction : 0;
+  return cfg.on ? roofKwp(b, cfg.model ?? panel) * cfg.fraction : 0;
 }
 
 /** Output (kW) of one building for a real campus-plant yield (kW per kWp). */

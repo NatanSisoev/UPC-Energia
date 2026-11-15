@@ -10,7 +10,7 @@ const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'Au
  * Date picker over the recorded data: any day that belongs to a replayed week can be opened.
  * Picking a day loads its week and moves the timeline to that day (same time of day).
  */
-export default function Calendar() {
+export default function Calendar({ up = false }: { up?: boolean }) {
   const replay = useSim((s) => s.replay);
   const weekIdx = useSim((s) => s.weekIdx);
   const tMin = useSim((s) => s.tMin);
@@ -31,6 +31,7 @@ export default function Calendar() {
   }, [replay]);
 
   const cur = derived.current ? Math.floor(derived.current.week.ms[Math.min(167, Math.floor(tMin / 60))] / DAY) : 0;
+  const [note, setNote] = useState<string | null>(null);
   const [month, setMonth] = useState<{ y: number; m: number } | null>(null);
   useEffect(() => {
     if (open && cur) {
@@ -51,9 +52,20 @@ export default function Calendar() {
   const last = new Date(replay[weekIdx].ms[replay[weekIdx].ms.length - 1]);
   const short = (d: Date) => `${d.getUTCDate()} ${MON[d.getUTCMonth()].slice(0, 3)}`;
 
-  const pick = (k: number) => {
+  /** closest day that has recorded data (custom dates outside the replay land here) */
+  const nearest = (k: number) => {
+    let best = k;
+    let gap = Infinity;
+    for (const d of days.keys()) if (Math.abs(d - k) < gap) { gap = Math.abs(d - k); best = d; }
+    return best;
+  };
+  const dayLabel = (k: number) => `${new Date(k * DAY).getUTCDate()} ${MON[new Date(k * DAY).getUTCMonth()].slice(0, 3)} ${new Date(k * DAY).getUTCFullYear()}`;
+
+  const pick = (want: number) => {
+    const k = days.has(want) ? want : nearest(want);
     const t = days.get(k);
     if (!t) return;
+    setNote(k === want ? null : `No recorded data for ${dayLabel(want)}; showing the closest day, ${dayLabel(k)}.`);
     const st = useSim.getState();
     const hod = Math.floor((tMin % 1440) / 60);
     if (t.w !== st.weekIdx) st.setWeek(t.w);
@@ -61,7 +73,7 @@ export default function Calendar() {
     let target = t.h;
     for (let h = t.h; h < w.ms.length && Math.floor(w.ms[h] / DAY) === k; h++) if (new Date(w.ms[h]).getUTCHours() <= hod) target = h;
     st.setTMin(target * 60 + (tMin % 60));
-    setOpen(false);
+    if (k === want) setOpen(false);
   };
 
   let grid: Array<number | null> = [];
@@ -75,12 +87,12 @@ export default function Calendar() {
 
   return (
     <div className="relative" ref={boxRef} data-tour="calendar">
-      <button type="button" className="btn" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button type="button" className="btn !py-1 !text-[12px]" onClick={() => setOpen(!open)} aria-expanded={open}>
         <CalendarDays size={15} />
         <span className="tnum">{short(first)} – {short(last)} {last.getUTCFullYear()}</span>
       </button>
       {open && month && (
-        <div className="card fade-in absolute left-0 top-[calc(100%+6px)] z-40 w-[288px] p-3" style={{ boxShadow: 'var(--shadow-lg)' }}>
+        <div className={`card fade-in absolute right-0 z-40 w-[288px] p-3 ${up ? 'bottom-[calc(100%+6px)]' : 'left-0 top-[calc(100%+6px)]'}`} style={{ boxShadow: 'var(--shadow-lg)' }}>
           <div className="mb-2 flex items-center justify-between">
             <button type="button" className="icon-btn !h-7 !w-7" onClick={() => shift(-1)} aria-label="Previous month">
               <ChevronLeft size={14} />
@@ -105,24 +117,31 @@ export default function Calendar() {
                 <button
                   key={k}
                   type="button"
-                  disabled={!has}
+                  title={has ? undefined : 'No recorded data: jumps to the closest recorded day'}
                   onClick={() => pick(k)}
-                  className={`tnum h-8 rounded-md text-[12px] ${isCur ? 'bg-[var(--accent)] font-semibold text-[var(--on-accent)]' : inWeek ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : has ? 'hover:bg-[var(--surface-3)]' : 'cursor-default text-[var(--faint)] opacity-40'}`}
+                  className={`tnum h-8 rounded-md text-[12px] ${isCur ? 'bg-[var(--accent)] font-semibold text-[var(--on-accent)]' : inWeek ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : has ? 'hover:bg-[var(--surface-3)]' : 'text-[var(--faint)] hover:bg-[var(--surface-3)]'}`}
                 >
                   {new Date(k * DAY).getUTCDate()}
                 </button>
               );
             })}
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] muted">
-            <span>Days with recorded data are selectable.</span>
-          </div>
-          <div className="mt-2 flex gap-1.5">
-            <button type="button" className="btn !px-2 !py-1 !text-[12px]" disabled={weekIdx === 0} onClick={() => useSim.getState().setWeek(Math.max(0, weekIdx - 1))}>
-              ← Prev. week
+          <label className="mt-3 flex items-center justify-between gap-2 text-[12px]">
+            <span className="muted">Go to date</span>
+            <input
+              type="date"
+              className="h-8 rounded-md border border-[var(--border-strong)] bg-[var(--surface)] px-2 text-[12px] outline-none focus:border-[var(--accent)]"
+              value={new Date(cur * DAY).toISOString().slice(0, 10)}
+              onChange={(e) => e.target.value && pick(Date.parse(e.target.value + 'T00:00:00Z') / DAY)}
+            />
+          </label>
+          <div className="mt-2 text-[11px] faint">{note ?? 'Pick any date: days without recorded data jump to the closest one that has.'}</div>
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[var(--border)] pt-3">
+            <button type="button" className="btn justify-center !py-1.5 !text-[12px]" disabled={weekIdx === 0} onClick={() => useSim.getState().setWeek(Math.max(0, weekIdx - 1))}>
+              <ChevronLeft size={14} /> Previous week
             </button>
-            <button type="button" className="btn !px-2 !py-1 !text-[12px]" disabled={weekIdx === replay.length - 1} onClick={() => useSim.getState().setWeek(Math.min(replay.length - 1, weekIdx + 1))}>
-              Next week →
+            <button type="button" className="btn justify-center !py-1.5 !text-[12px]" disabled={weekIdx === replay.length - 1} onClick={() => useSim.getState().setWeek(Math.min(replay.length - 1, weekIdx + 1))}>
+              Next week <ChevronRight size={14} />
             </button>
           </div>
         </div>

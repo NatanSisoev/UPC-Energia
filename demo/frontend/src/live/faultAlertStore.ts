@@ -88,6 +88,6 @@ export function activeFaults(): Map<string, Omit<Incident, 'at'>> {
 /** mailto: prefilled with fault, asset, simulated time and the proposed solution. */
 export function mailto(items: Incident[]): string {
   const subject = `SIMULATED fault: ${items.map((i) => i.title).join('; ')}`;
-  const body = `${items.map((i) => `Fault: ${FAULT_PLAYBOOK[i.type].label}\nAsset: ${i.asset}\nSimulated time: ${i.at}\nProposed solution: ${solutionOf(i)}`).join('\n\n')}\n\n(Simulated fault from the UPC Campus Nord energy twin.)`;
+  const body = `${items.map((i) => `Fault: ${FAULT_PLAYBOOK[i.type].label}\nAsset: ${i.asset}\nSimulated time: ${i.at}\nProposed solution: ${solutionOf(i)}`).join('\n\n')}\n\n(Simulated fault from UPC Energia.)`;
   return `mailto:${TECH_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }

@@ -4,7 +4,8 @@
  */
 import { useMemo } from 'react';
 import { derived, useSim, visibleLimitH, workingBatteries, type AlarmKind } from '../store/useSim';
-import { modelOf } from '../sim/engine';
+import { buildingSolarKw, DEFAULT_TILT, modelOf, PV_ASBUILT_KWP } from '../sim/engine';
+import { cutNodes } from '../scene/network';
 import { fmtKw } from './format';
 
 export type Severity = 'critical' | 'warning' | 'info';
@@ -83,6 +84,37 @@ export function computeAlarms(): Alarm[] {
       const p = s.campus.features.find((f) => f.properties.osmId === id)?.properties;
       if (!p) continue;
       add({ id: `pv-${id}`, kind: 'equipment', severity: 'warning', startH: 0, endH: n, title: `Solar array fault: ${p.short}`, detail: 'Inverter reports no output. Production on this roof is lost until repaired.', target: id });
+    }
+    for (const i of s.faults.cables) {
+      const e = s.network?.edges[i];
+      if (!e) continue;
+      const down = e.down ?? 1;
+      // demand the cut-off buildings can no longer cover from the grid (their own roof solar still serves them)
+      const lost = cutNodes(s.network!, [i]);
+      let unservedKwh = 0;
+      let peakKw = 0;
+      for (const ni of lost) {
+        const nd = s.network!.nodes[ni];
+        if (nd.kind !== 'bld') continue;
+        const p = s.campus.features[nd.b].properties;
+        const cfg = s.solar[p.osmId] ?? { on: false, fraction: 0, tilt: DEFAULT_TILT };
+        for (let h = 0; h < n; h++) {
+          const need = Math.max(0, d.shares[nd.b * 168 + h] * d.week.load[h] - (s.faults.roofs.includes(p.osmId) ? 0 : buildingSolarKw(p, cfg, s.panelModel, d.week.pv[h] / PV_ASBUILT_KWP)));
+          unservedKwh += need;
+          peakKw = Math.max(peakKw, need);
+        }
+      }
+      const yard = lost.has(1);
+      add({
+        id: `cab-${i}`,
+        kind: 'equipment',
+        severity: 'critical',
+        startH: 0,
+        endH: n,
+        title: `Cable cut: C-${String(i + 1).padStart(2, '0')}`,
+        detail: `${e.len.toFixed(0)} m segment out of service. ${down <= 1 ? 'The building it feeds loses' : `The ${down} buildings downstream lose`} their supply${yard ? ' and the battery yard goes offline' : ''} until it is repaired. Unserved this week: ${(unservedKwh / 1000).toFixed(1)} MWh, up to ${fmtKw(peakKw)}.`,
+        target: `cable:${i}`,
+      });
     }
   }
 

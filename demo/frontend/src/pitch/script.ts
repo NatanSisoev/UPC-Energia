@@ -167,16 +167,6 @@ export const SCENES: Scene[] = [
     show: {},
   },
   {
-    id: 'whatif',
-    dur: 14,
-    kicker: '5 · Results',
-    title: 'Change the strategy, re-run the real agent',
-    body: 'Drag the CO₂-versus-cost weight and the agent re-plans the replayed week live; the sweeps show what another weighting or a bigger battery would do.',
-    route: '/insights',
-    insight: 'whatif',
-    speed: 0,
-  },
-  {
     id: 'limits',
     dur: 12,
     kicker: '6 · Limits and next steps',

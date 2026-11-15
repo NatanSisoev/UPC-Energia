@@ -79,13 +79,14 @@ export default function FaultPanel({ onClose, onAlarms, onConfigure, onAsk }: { 
     const s = useSim.getState();
     if (i.key.startsWith('bat-')) s.setFaults({ batteries: s.faults.batteries.filter((b) => `bat-${b}` !== i.key) });
     else if (i.key.startsWith('pv-')) s.setFaults({ roofs: s.faults.roofs.filter((r) => `pv-${r}` !== i.key) });
+    else if (i.key.startsWith('cab-')) s.setFaults({ cables: s.faults.cables.filter((c) => `cab-${c}` !== i.key) });
     else s.setFaults({ outage: null });
   };
 
   const sendEmail = () =>
     void sendFaultAlert(
       `SIMULATED fault: ${shown.map((i) => i.title).join('; ')}`,
-      `${shown.map((i) => `${i.line}\nSimulated time: ${i.at}\nProposed solution: ${solutionOf(i)}`).join('\n\n')}\n\nThis is a SIMULATED fault in the UPC Campus Nord energy twin, not a real incident.`,
+      `${shown.map((i) => `${i.line}\nSimulated time: ${i.at}\nProposed solution: ${solutionOf(i)}`).join('\n\n')}\n\nThis is a SIMULATED fault in UPC Energia, not a real incident.`,
     );
 
   return (

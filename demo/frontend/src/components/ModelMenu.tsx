@@ -46,7 +46,7 @@ export default function ModelMenu() {
       <div className="relative" ref={ref} data-tour="model">
         <button type="button" className="btn !py-1 !text-[12px]" onClick={() => setOpen(!open)} title="Model that drives the battery (forecasts and charge / discharge decisions)">
           {loading ? <Loader2 size={13} className="animate-spin" /> : null}
-          <span className="text-[var(--text-dim,inherit)] opacity-70">Model:</span> <span className="font-semibold">{cur?.name ?? '—'}</span>
+          <span className="font-semibold">{cur?.name ?? '—'}</span>
           {weekScore != null && modelId !== 'none' && <span className="tnum opacity-70">· {weekScore.toFixed(2)}</span>}
           <ChevronDown size={13} />
         </button>

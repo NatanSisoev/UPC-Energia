@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router';
 import TourOverlay from './tour/TourOverlay';
+import Toasts from './components/Toasts';
 import App from './App';
 import CataloguePage from './components/CataloguePage';
 
@@ -37,6 +38,7 @@ function Root() {
     <>
       <Outlet />
       <TourOverlay />
+      <Toasts />
     </>
   );
 }

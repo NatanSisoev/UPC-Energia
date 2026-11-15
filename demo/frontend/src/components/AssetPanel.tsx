@@ -1,6 +1,6 @@
-import { Plus, Store, X } from 'lucide-react';
+import { Check, Plus, Store, X } from 'lucide-react';
 import { Link } from 'react-router';
-import { BATTERY_MODELS, SUBSTATION_POWER_LIMIT_MW } from '../data/catalogue';
+import { BATTERY_MODELS, CABLE_MODELS, SUBSTATION_POWER_LIMIT_MW, cableMva } from '../data/catalogue';
 import { derived, useSim } from '../store/useSim';
 import { batterySheet, cableRatingKw, cableSheet, gradeColor, pvSheet, substationSheet, type AssetSheet } from '../data/assets';
 import { cableMixAt, cableSeries } from '../lib/cables';
@@ -9,7 +9,7 @@ import FlowHistory from './FlowHistory';
 import { modelOf } from '../sim/engine';
 import { cableFlow } from '../scene/minimal';
 import { useAlarms } from '../lib/alarms';
-import { fmtKw } from '../lib/format';
+import { fmtEur, fmtKw } from '../lib/format';
 
 /**
  * Sidebar for non-building equipment: the battery yard (one sheet per unit), the substation, a cable segment or a
@@ -27,6 +27,8 @@ export default function AssetPanel({ id, onClose }: { id: string; onClose: () =>
   let sheets: AssetSheet[] = [];
   let live: Array<[string, string]> = [];
   let extra: React.ReactNode = null;
+  /** fault toggle shown under the spec sheet (cables), like the battery units' */
+  let sheetActions: React.ReactNode = null;
   /** quick-add control rendered right under the installed battery list */
   let addPanel: React.ReactNode = null;
   /** week history of the power through this equipment */
@@ -111,7 +113,8 @@ export default function AssetPanel({ id, onClose }: { id: string; onClose: () =>
     const flow = cableFlow(i);
     const to = st.network!.nodes[e.to];
     const fed = to.kind === 'bld' ? st.campus?.features[to.b]?.properties.short : to.kind === 'batt' ? 'battery yard' : null;
-    sheets = [cableSheet({ i, len: e.len, down: e.down ?? 1, flowKw: flow })];
+    const model = CABLE_MODELS.find((m) => m.id === st.cableModels[i]);
+    sheets = [cableSheet({ i, len: e.len, down: e.down ?? 1, flowKw: flow, model })];
     title = sheets[0].title;
     subtitle = fed ? `Feeds ${fed}` : `Feeds ${e.down ?? 0} building${(e.down ?? 0) === 1 ? '' : 's'} downstream`;
     live = [
@@ -121,9 +124,9 @@ export default function AssetPanel({ id, onClose }: { id: string; onClose: () =>
     ];
     history =
       to.kind === 'batt' ? (
-        <FlowHistory series={cableSeries(i)} pos={{ label: 'To the battery', color: ORANGE.color }} neg={{ label: 'From the battery', color: 'rgb(16,170,170)' }} ratingKw={cableRatingKw(e.down ?? 1)} />
+        <FlowHistory series={cableSeries(i)} pos={{ label: 'To the battery', color: ORANGE.color }} neg={{ label: 'From the battery', color: 'rgb(16,170,170)' }} ratingKw={cableRatingKw(e.down ?? 1, model)} />
       ) : (
-        <FlowHistory series={cableSeries(i)} pos={{ label: 'To buildings', color: ORANGE.color }} neg={{ label: 'Back-feed', color: 'rgb(64,176,96)' }} ratingKw={cableRatingKw(e.down ?? 1)} />
+        <FlowHistory series={cableSeries(i)} pos={{ label: 'To buildings', color: ORANGE.color }} neg={{ label: 'Back-feed', color: 'rgb(64,176,96)' }} ratingKw={cableRatingKw(e.down ?? 1, model)} />
       );
     // source breakdown: this hour and the week's energy
     const n = d.week.load.length;
@@ -151,6 +154,12 @@ export default function AssetPanel({ id, onClose }: { id: string; onClose: () =>
         <div className="mt-2 text-[10.5px] faint">Estimate: the cable network is shared, so a feeder carries the network's mix of each hour (grid import, battery discharge, rooftop solar pushed back by other buildings).</div>
       </section>
     );
+    const cut = st.faults.cables.includes(i);
+    sheetActions = (
+      <button type="button" className={`btn !py-1 !text-[12px] ${cut ? '' : 'btn-danger'}`} onClick={() => st.setFaults({ cables: cut ? st.faults.cables.filter((x) => x !== i) : [...st.faults.cables, i] })}>
+        {cut ? 'Mark repaired' : 'Simulate fault'}
+      </button>
+    );
     if (to.kind === 'bld') {
       const bid = st.campus!.features[to.b].properties.osmId;
       extra = (
@@ -159,6 +168,39 @@ export default function AssetPanel({ id, onClose }: { id: string; onClose: () =>
         </button>
       );
     }
+    // replace this segment with a catalogue cable (a new cable is also a repair)
+    addPanel = (
+      <section className="mb-4 rounded-[10px] border border-[var(--border)] p-3">
+        <div className="mb-1 flex items-baseline justify-between">
+          <div className="eyebrow">Replace this cable</div>
+          <span className="tnum text-[11px] muted">{e.len.toFixed(0)} m segment</span>
+        </div>
+        <ul className="mb-2 grid gap-1">
+          {CABLE_MODELS.filter((m) => m.level !== 'DC').map((m) => {
+            const on = model?.id === m.id;
+            return (
+              <li key={m.id}>
+                <button
+                  type="button"
+                  onClick={() => st.setCableModel(i, on ? null : m.id)}
+                  title={on ? 'Installed: click to go back to the original cable' : `Install ${m.name} on this segment`}
+                  className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[12px] hover:bg-[var(--surface-2)] ${on ? 'border-[var(--accent)]' : 'border-[var(--border)]'}`}
+                >
+                  {on ? <Check size={13} className="shrink-0 text-[var(--accent)]" /> : <Plus size={13} className="shrink-0" />}
+                  <span className="min-w-0 flex-1 truncate font-medium">{m.name}</span>
+                  <span className="tnum muted">
+                    {cableMva(m).toFixed(1)} MVA · {fmtEur(m.eurPerM * e.len)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <Link to="/catalogue?tab=cable" className="text-[11.5px] muted underline">
+          <Store size={12} className="mr-1 inline" /> See all details and prices
+        </Link>
+      </section>
+    );
   } else if (id.startsWith('pv:')) {
     const p = st.campus?.features.find((f) => f.properties.osmId === target)?.properties;
     if (!p) return null;
@@ -260,6 +302,7 @@ export default function AssetPanel({ id, onClose }: { id: string; onClose: () =>
                   )}
                 </div>
               )}
+              {sheetActions && <div className="mt-3 flex gap-2">{sheetActions}</div>}
               {s.estimated && <div className="mt-2 text-[10.5px] faint">Age and specifications are estimates (no asset register in the challenge data).</div>}
             </section>
           );

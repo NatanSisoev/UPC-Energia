@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pause, Play, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pause, Play, ZoomIn, ZoomOut } from 'lucide-react';
 import { derived, useSim, visibleLimitH } from '../store/useSim';
 import { ForecastCard } from './ForecastCard';
 import { useAlarms } from '../lib/alarms';
 import { fmtKw, weekMsAt } from '../lib/format';
 import { Seg } from './kit';
+import Calendar from './Calendar';
 import { useUi } from '../store/useUi';
 import { toggleCharts } from '../lib/chartsHover';
 import { SOURCE, weekMix, type Source } from '../lib/supply';
@@ -19,6 +20,9 @@ const p2 = (n: number) => String(n).padStart(2, '0');
  * Left of the NOW marker is measured history, right of it the forecast (hatched, dashed curve).
  * Coloured marks under the curve are alarms.
  */
+/** playback speeds: simulated minutes per real second, with their labels */
+const SPEEDS: Array<[number, string]> = [[15, '¼ h/s'], [30, '½ h/s'], [60, '1 h/s'], [180, '3 h/s'], [480, '8 h/s'], [1200, '20 h/s']];
+
 export default function TimeBar() {
   const tMin = useSim((s) => s.tMin);
   const playing = useSim((s) => s.playing);
@@ -34,9 +38,14 @@ export default function TimeBar() {
     if (stage === 'off') setCardOpen(false);
   }, [stage]);
   const [zoom, setZoom] = useState<'week' | 'day'>('week');
+  /** free zoom window in hours of the week (wheel / zoom buttons); null = follow the Week / Day preset */
+  const [win, setWin] = useState<[number, number] | null>(null);
   const zoomReq = useUi((u) => u.zoomReq);
   useEffect(() => {
-    if (zoomReq) setZoom(zoomReq.zoom);
+    if (zoomReq) {
+      setZoom(zoomReq.zoom);
+      setWin(null);
+    }
   }, [zoomReq]);
   /** hour under the pointer (tooltip) */
   const [hv, setHv] = useState<{ h: number; px: number } | null>(null);
@@ -61,9 +70,28 @@ export default function TimeBar() {
   }, [version, d?.week.start]);
 
   const day = days.find((x) => curH >= x.h0 && curH < x.h1) ?? days[0];
-  const [r0, r1] = zoom === 'week' || !day ? [0, n] : [day.h0, day.h1];
+  const [r0, r1] = win ? [Math.max(0, win[0]), Math.min(n, win[1])] : zoom === 'week' || !day ? [0, n] : [day.h0, day.h1];
   const span = r1 - r0;
   const x = (h: number) => ((h - r0) / span) * 100;
+  /** zoomed in far enough to show hours instead of days */
+  const fine = span <= 36;
+  /** zoom by `factor` (<1 = in) keeping the hour `at` where it is on screen */
+  const zoomBy = (factor: number, at: number) => {
+    const ns = Math.round(Math.min(n, Math.max(4, span * factor)));
+    if (ns >= n) {
+      setWin(null);
+      setZoom('week');
+      return;
+    }
+    const f = (at - r0) / span;
+    const a = Math.round(Math.min(n - ns, Math.max(0, at - f * ns)));
+    setWin([a, a + ns]);
+  };
+  const panBy = (dh: number) => {
+    if (span >= n) return;
+    const a = Math.round(Math.min(n - span, Math.max(0, r0 + dh)));
+    setWin([a, a + span]);
+  };
   const nowH = d?.nowH ?? null;
   /** hours that may be drawn: up to LIVE, plus the forecast hours generated so far */
   const lim = visibleLimitH({ fcStage: stage, fcReveal: reveal });
@@ -118,16 +146,25 @@ export default function TimeBar() {
   }, [version, d?.week.start, nowH, limKey]);
 
   const total = Math.max(1, Math.floor(lim) * 60); // the future is not seekable until it has been generated
-  const seek = (clientX: number, fine: boolean) => {
+  const seek = (clientX: number, shift: boolean) => {
     const el = trackRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
     const raw = r0 * 60 + ((clientX - r.left) / r.width) * span * 60;
-    const q = zoom === 'day' || fine ? 5 : 15;
+    const q = fine || shift ? 5 : 15;
     st.setTMin(Math.min(total - 1, Math.max(0, Math.round(raw / q) * q)));
   };
   const step = (min: number) => st.setTMin(Math.min(total - 1, Math.max(0, tMin + min)));
 
+  const speedIdx = SPEEDS.reduce((best, [v], i) => (Math.abs(v - speed) < Math.abs(SPEEDS[best][0] - speed) ? i : best), 0);
+  useEffect(() => {
+    if (win && (curH < win[0] || curH >= win[1])) {
+      const w = win[1] - win[0];
+      const a = Math.round(Math.min(n - w, Math.max(0, curH - w / 2)));
+      setWin([a, a + w]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curH]);
   const nowMs = d ? weekMsAt(d.week.ms, tMin) : 0;
   const nd = new Date(nowMs);
   const isFc = nowH != null && curH >= nowH;
@@ -138,23 +175,27 @@ export default function TimeBar() {
       className="pointer-events-auto relative flex w-full items-stretch gap-4 px-4 py-3"
     >
       {/* transport */}
-      <div className="flex shrink-0 items-center gap-1.5">
-        <button type="button" onClick={() => st.setPlaying(!playing)} className={`icon-btn ${playing ? 'on' : ''}`} aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause' : 'Play'}>
-          {playing ? <Pause size={15} /> : <Play size={15} />}
-        </button>
-        <button type="button" className="icon-btn !w-7" onClick={() => step(zoom === 'day' ? -15 : -60)} aria-label="Step back" title={zoom === 'day' ? '−15 min' : '−1 h'}>
-          <ChevronLeft size={15} />
-        </button>
-        <button type="button" className="icon-btn !w-7" onClick={() => step(zoom === 'day' ? 15 : 60)} aria-label="Step forward" title={zoom === 'day' ? '+15 min' : '+1 h'}>
-          <ChevronRight size={15} />
-        </button>
-        <select className="h-7 rounded-md border border-[var(--border-strong)] bg-[var(--surface)] px-1 text-[11.5px] outline-none focus:border-[var(--accent)]" value={speed} onChange={(e) => st.setSpeed(Number(e.target.value))} aria-label="Playback speed" title="Playback speed (simulated time per second)">
-          {[[15, '¼ h/s'], [30, '½ h/s'], [60, '1 h/s'], [180, '3 h/s'], [480, '8 h/s'], [1200, '20 h/s']].map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </select>
+      <div className="flex shrink-0 items-center gap-2 self-center">
+        <div className="flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] p-1">
+          <button type="button" className="tb-step" onClick={() => step(fine ? -15 : -60)} aria-label="Step back" title={fine ? '−15 min' : '−1 h'}>
+            <ChevronLeft size={16} />
+          </button>
+          <button type="button" onClick={() => st.setPlaying(!playing)} className={`tb-play ${playing ? 'on' : ''}`} aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause' : 'Play'}>
+            {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" className="ml-0.5" />}
+          </button>
+          <button type="button" className="tb-step" onClick={() => step(fine ? 15 : 60)} aria-label="Step forward" title={fine ? '+15 min' : '+1 h'}>
+            <ChevronRight size={16} />
+          </button>
+        </div>
+        <div className="tb-speed" role="group" aria-label="Playback speed" title="Playback speed (simulated time per second)">
+          <button type="button" className="tb-speed-btn" disabled={speedIdx <= 0} onClick={() => st.setSpeed(SPEEDS[Math.max(0, speedIdx - 1)][0])} aria-label="Slow down" title="Slow down">
+            <ChevronDown size={14} />
+          </button>
+          <span className="min-w-[44px] text-center">{SPEEDS[speedIdx][1]}</span>
+          <button type="button" className="tb-speed-btn" disabled={speedIdx >= SPEEDS.length - 1} onClick={() => st.setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, speedIdx + 1)][0])} aria-label="Speed up" title="Speed up">
+            <ChevronUp size={14} />
+          </button>
+        </div>
       </div>
 
       <div className="w-[128px] shrink-0 leading-tight">
@@ -186,6 +227,12 @@ export default function TimeBar() {
             setHv({ h: Math.min(r1 - 1, Math.max(r0, Math.floor(r0 + (px / r.width) * span))), px });
           }}
           onPointerLeave={() => setHv(null)}
+          onWheel={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            const at = r0 + ((e.clientX - r.left) / r.width) * span;
+            if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) panBy(((e.deltaX || e.deltaY) / r.width) * span);
+            else zoomBy(e.deltaY < 0 ? 0.8 : 1.25, at);
+          }}
           role="slider"
           aria-label="Time"
           aria-valuemin={0}
@@ -209,7 +256,7 @@ export default function TimeBar() {
               {stage === 'off' ? (
                 <button
                   type="button"
-                  className="btn-primary pointer-events-auto !py-1 !text-[12px]"
+                  className="btn pointer-events-auto !py-1 !text-[12px]"
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -217,7 +264,7 @@ export default function TimeBar() {
                   }}
                   title="Predict demand and solar for the rest of the week, then plan the battery over it"
                 >
-                  <Sparkles size={13} /> Generate forecast
+                  Generate forecast
                 </button>
               ) : (
                 <span className="eyebrow !text-[9px] !text-[var(--accent)]">computing…</span>
@@ -228,7 +275,7 @@ export default function TimeBar() {
 
           <svg className="absolute inset-0 h-full w-full" viewBox={`${r0} 0 ${span} 46`} preserveAspectRatio="none" aria-hidden>
             {/* day / hour grid */}
-            {zoom === 'week'
+            {!fine
               ? days.slice(1).map((dd) => <line key={dd.h0} x1={dd.h0} x2={dd.h0} y1={0} y2={46} stroke="var(--border-strong)" strokeWidth={1} vectorEffect="non-scaling-stroke" />)
               : Array.from({ length: span - 1 }, (_, i) => r0 + i + 1).map((h) => (
                   <line key={h} x1={h} x2={h} y1={new Date(d!.week.ms[h]).getUTCHours() % 6 === 0 ? 0 : 36} y2={46} stroke="var(--border)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
@@ -276,52 +323,71 @@ export default function TimeBar() {
           )}
         </div>
 
-        {/* scale */}
-        <div className="relative mt-1 h-4 select-none">
-          {zoom === 'week'
-            ? days.map((dd) => {
-                const on = curH >= dd.h0 && curH < dd.h1;
-                const t = new Date(dd.ms);
-                return (
-                  <button
-                    key={dd.h0}
-                    type="button"
-                    className={`tnum absolute top-0 truncate text-center text-[10.5px] ${on ? 'font-semibold text-[var(--accent)]' : 'muted hover:text-[var(--text)]'}`}
-                    style={{ left: `${x(dd.h0)}%`, width: `${((dd.h1 - dd.h0) / span) * 100}%` }}
-                    onClick={() => {
-                      const hod = nd.getUTCHours();
-                      let target = dd.h0;
-                      for (let h = dd.h0; h < dd.h1; h++) if (new Date(d!.week.ms[h]).getUTCHours() <= hod) target = h;
-                      st.setTMin(target * 60 + (tMin % 60));
-                    }}
-                    onDoubleClick={() => setZoom('day')}
-                    title="Click: go to this day · double-click: zoom in"
-                  >
-                    {dd.h1 - dd.h0 >= 8 ? `${DOW[t.getUTCDay()]} ${t.getUTCDate()}` : ''}
-                  </button>
-                );
-              })
-            : Array.from({ length: span }, (_, i) => r0 + i)
-                .filter((h) => new Date(d!.week.ms[h]).getUTCHours() % 3 === 0)
-                .map((h) => (
-                  <span key={h} className="tnum absolute top-0 -translate-x-1/2 text-[10.5px] muted" style={{ left: `${x(h)}%` }}>
-                    {p2(new Date(d!.week.ms[h]).getUTCHours())}h
-                  </span>
-                ))}
+        {/* scale: day names (clipped to the visible window, kept when zoomed in) + hour ticks when zoomed to a day or so */}
+        <div className={`relative mt-1 select-none overflow-hidden ${fine ? 'h-9' : 'h-4'}`}>
+          {fine &&
+            Array.from({ length: span }, (_, i) => r0 + i)
+              .filter((h) => new Date(d!.week.ms[h]).getUTCHours() % (span <= 12 ? 1 : 3) === 0)
+              .map((h) => (
+                <span key={h} className="tnum absolute top-0 -translate-x-1/2 text-[10.5px] muted" style={{ left: `${x(h)}%` }}>
+                  {p2(new Date(d!.week.ms[h]).getUTCHours())}h
+                </span>
+              ))}
+          {days
+            .filter((dd) => dd.h1 > r0 && dd.h0 < r1)
+            .map((dd) => {
+              const a = Math.max(dd.h0, r0);
+              const e = Math.min(dd.h1, r1);
+              const on = curH >= dd.h0 && curH < dd.h1;
+              const t = new Date(dd.ms);
+              return (
+                <button
+                  key={dd.h0}
+                  type="button"
+                  className={`tnum absolute truncate text-center text-[10.5px] ${fine ? 'top-4' : 'top-0'} ${on ? 'font-semibold text-[var(--accent)]' : 'muted hover:text-[var(--text)]'}`}
+                  style={{ left: `${x(a)}%`, width: `${((e - a) / span) * 100}%` }}
+                  onClick={() => {
+                    const hod = nd.getUTCHours();
+                    let target = dd.h0;
+                    for (let h = dd.h0; h < dd.h1; h++) if (new Date(d!.week.ms[h]).getUTCHours() <= hod) target = h;
+                    st.setTMin(target * 60 + (tMin % 60));
+                  }}
+                  onDoubleClick={() => {
+                    setZoom('day');
+                    setWin(null);
+                  }}
+                  title="Click: go to this day · double-click: zoom to it"
+                >
+                  {e - a >= Math.min(8, span / 3) ? `${DOW[t.getUTCDay()]} ${t.getUTCDate()}` : ''}
+                </button>
+              );
+            })}
         </div>
       </div>
 
       <div className="flex shrink-0 flex-col items-end justify-center gap-2">
+        <Calendar up />
         <div className="flex items-center gap-2">
           <Seg
             label="Timeline zoom"
-            value={zoom}
-            onChange={setZoom}
+            value={win ? ('custom' as 'week' | 'day') : zoom}
+            onChange={(z) => {
+              setZoom(z);
+              setWin(null);
+            }}
             options={[
               ['week', 'Week'],
               ['day', 'Day'],
             ]}
           />
+          <span className="flex items-center gap-0.5">
+            <button type="button" className="tb-step" onClick={() => zoomBy(0.5, curH)} disabled={span <= 4} aria-label="Zoom in" title="Zoom in (mouse wheel over the timeline)">
+              <ZoomIn size={15} />
+            </button>
+            <button type="button" className="tb-step" onClick={() => zoomBy(2, curH)} disabled={span >= n} aria-label="Zoom out" title="Zoom out">
+              <ZoomOut size={15} />
+            </button>
+          </span>
           <button
             type="button"
             onClick={toggleCharts}

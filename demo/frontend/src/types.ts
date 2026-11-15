@@ -1,4 +1,4 @@
-/** Shared types for the Campus Nord energy twin demo. */
+/** Shared types for the UPC Energia demo. */
 import type { AgentKind, Reason } from './sim/challenge';
 
 export type Category =
@@ -76,6 +76,8 @@ export interface SolarCfg {
   fraction: number;
   /** panel tilt in degrees */
   tilt: number;
+  /** module technology installed on this roof; falls back to the campus-wide `panelModel` when unset */
+  model?: PanelModelId;
 }
 
 export interface BatteryUnit {

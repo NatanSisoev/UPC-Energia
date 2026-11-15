@@ -232,6 +232,7 @@ export function changes(k: K) {
   if (s.ageing) lines.push('equipment ageing applied');
   if (s.faults.batteries.length) lines.push(`${s.faults.batteries.length} battery unit(s) marked broken`);
   if (s.faults.roofs.length) lines.push(`${s.faults.roofs.length} solar roof(s) marked broken`);
+  if (s.faults.cables.length) lines.push(`${s.faults.cables.length} cable segment(s) marked cut`);
   if (s.faults.outage) lines.push(`grid outage of ${s.faults.outage.hours} h from ${hourLabel(s.faults.outage.startH)}`);
   const dCo2 = t.chosen.co2Kg - t.real.co2Kg;
   const dCost = t.chosen.costEur - t.real.costEur;
@@ -280,7 +281,7 @@ function faultImpact(k: K, i: Incident): string[] {
   const out: string[] = [];
   const { s, d, w } = k;
   if (i.type === 'battery') {
-    const healthy = fleetSpec(effectiveBatteries({ batteries: s.batteries, faults: { batteries: [], roofs: [], outage: null }, ageing: s.ageing }));
+    const healthy = fleetSpec(effectiveBatteries({ batteries: s.batteries, faults: { batteries: [], roofs: [], cables: [], outage: null }, ageing: s.ageing }));
     const left = k.battery.workingMwh;
     out.push(`Working storage left: **${left.toFixed(2)} MWh** of ${k.battery.totalMwh.toFixed(2)} MWh${left === 0 ? ' — the agent cannot charge or discharge' : ''}.`);
     if (healthy) {

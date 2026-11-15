@@ -6,6 +6,7 @@ import { derived, useSim } from '../store/useSim';
 import { useUi, type Popup, type Side } from '../store/useUi';
 import { camera, HOME_2D, HOME_3D, type ViewState } from '../components/MapView';
 import { closeCharts } from '../lib/chartsHover';
+import { weekCableFlows } from '../lib/cables';
 import { panelsOf, worldRef } from '../scene/minimal';
 import { useInsightsUi } from '../components/Insights';
 import type { LayerId } from '../types';
@@ -64,8 +65,29 @@ function mondayNoon(ms: number[]): number {
   return 11;
 }
 
-/** Every step starts from this baseline (real campus, standard model, Monday 11:00, nothing open, 2D map). */
-export async function resetBase(): Promise<void> {
+/** glide the locked sun hour to `to` (eased) instead of snapping, so leaving a dusk shot does not flash to daylight */
+async function easeSun(to: number, ms = 800): Promise<void> {
+  const from = useSim.getState().sunLock;
+  if (from == null || reducedMotion()) return;
+  const t0 = performance.now();
+  await new Promise<void>((done) => {
+    const tick = () => {
+      const k = Math.min(1, (performance.now() - t0) / ms);
+      const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+      useSim.getState().setSunLock(from + (to - from) * e);
+      if (k < 1) requestAnimationFrame(tick);
+      else done();
+    };
+    tick();
+  });
+}
+
+/**
+ * Every step starts from this baseline (real campus, standard model, Monday 11:00, nothing open, 2D map, light theme).
+ * `smooth` (plain Next into a new beat) glides the sun back first so the change reads as a transition, not a cut.
+ */
+export async function resetBase(smooth = false): Promise<void> {
+  if (smooth) await easeSun(11);
   let st = useSim.getState();
   const replay = st.replay;
   if (!replay) return;
@@ -74,7 +96,7 @@ export async function resetBase(): Promise<void> {
   st.resetScenario();
   st.setWeek(TOUR_WEEK);
   st.setForecast({ forecastOn: true, nowMode: 'manual', nowH: mondayNoon(replay[TOUR_WEEK].ms) });
-  st.setPrefs({ showActual: false, theme: saved?.theme ?? st.theme });
+  st.setPrefs({ showActual: false, theme: 'light' });
   st.setUnderground(false);
   st.setSunLock(null);
   st.setLayers(BASE_LAYERS);
@@ -89,7 +111,7 @@ export async function resetBase(): Promise<void> {
   ui.setSettings(null);
   (['scenario', 'model', 'calendar'] as Popup[]).forEach((p) => ui.setPopup(p, false));
   ui.setZoom('week');
-  useInsightsUi.getState().setTab('whatif');
+  useInsightsUi.getState().setTab('prices');
   clearHighlight();
   go('/');
 }
@@ -158,10 +180,11 @@ export function bigRoof(): { id: string; name: string } | null {
   return f ? { id: f.properties.osmId, name: f.properties.short } : null;
 }
 
-/** cable segment that feeds the most buildings (the trunk out of the substation) */
+/** the cable shown in the tour: segment C-05 (edge index 4); falls back to the segment that feeds the most buildings */
 export function trunkCable(): string | null {
   const n = useSim.getState().network;
   if (!n) return null;
+  if (n.edges[4]) return 'cable:4';
   let best = -1;
   let bd = -1;
   n.edges.forEach((e, i) => {
@@ -187,7 +210,7 @@ export function addSolarPanel(id: string): void {
   st.setSolar(id, { on: true, fraction: Math.min(0.6, (0.6 * (lo + hi)) / 2), tilt: cfg.tilt });
 }
 
-/** one addition of the fault scene of beats 4-5: 1 original battery unit broken, 2 PV array broken, 3 grid outage at night (dark theme) */
+/** one addition of the fault scene of beats 4-5: 1 original battery unit broken, 2 PV array broken, 3 grid outage at night */
 export function faultStep(n: number): void {
   const st = useSim.getState();
   if (n === 1) {
@@ -198,7 +221,6 @@ export function faultStep(n: number): void {
     if (roof) st.setFaults({ roofs: [roof.id] });
   } else if (n === 3) {
     st.setFaults({ outage: { startH: Math.floor(derived.current?.nowH ?? 59), hours: 3 } });
-    st.setPrefs({ theme: 'dark' });
     st.setSunLock(23);
   }
 }
@@ -206,4 +228,34 @@ export function faultStep(n: number): void {
 export function faultScene(n: number): void {
   useSim.getState().installBattery('lg-ess');
   for (let i = 1; i <= n; i++) faultStep(i);
+}
+
+/**
+ * An already-measured hour where the battery is charging AND a building pushes solar back into the cables, so the map
+ * shows both the teal battery cable and the green back-feed colour. Returns null when no such hour exists.
+ */
+export function chargingBackfeedHour(): number | null {
+  const st = useSim.getState();
+  const d = derived.current;
+  const net = st.network;
+  if (!d || !net) return null;
+  const flows = weekCableFlows();
+  const last = Math.min(d.nowH ?? d.week.load.length, d.week.load.length);
+  let best = -1;
+  let bestScore = 0;
+  for (let h = 0; h < last; h++) {
+    const charge = d.chosen.sp[h];
+    if (!(charge > 20) || !flows[h]) continue;
+    let back = 0;
+    net.edges.forEach((e, i) => {
+      if (net.nodes[e.to].kind === 'bld') back = Math.max(back, -flows[h][i]);
+    });
+    if (back < 5) continue;
+    const score = Math.min(charge, 500) / 500 + Math.min(back, 300) / 300;
+    if (score > bestScore) {
+      bestScore = score;
+      best = h;
+    }
+  }
+  return best < 0 ? null : best;
 }

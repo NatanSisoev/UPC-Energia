@@ -94,3 +94,22 @@ export function PaybackBar({ years, life, pays }: { years: number; life: number;
     </div>
   );
 }
+
+/** Cable cross-section: conductor discs inside the insulation, one disc per core, sized by the conductor section. */
+export function CableArt({ cores, accent, level }: { cores: number; accent: string; level: 'LV' | 'MV' | 'DC' }) {
+  const R = 30;
+  const r = cores === 1 ? 12 : cores === 2 ? 11 : 10;
+  const pts: Array<[number, number]> =
+    cores === 1 ? [[0, 0]] : cores === 2 ? [[-13, 0], [13, 0]] : Array.from({ length: cores }, (_, i) => [Math.cos((i / cores) * Math.PI * 2 - Math.PI / 2) * 14, Math.sin((i / cores) * Math.PI * 2 - Math.PI / 2) * 14] as [number, number]);
+  return (
+    <svg viewBox="0 0 220 74" className="h-[74px] w-full" role="img" aria-label={`${level} cable cross-section`}>
+      <g transform="translate(110 37)">
+        <circle r={R + 4} fill="var(--surface-3)" stroke="var(--border)" strokeWidth="1.5" />
+        <circle r={R} fill="var(--surface)" stroke="var(--border)" />
+        {pts.map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r={r} fill={accent} opacity={0.5 + 0.5 * ((i + 1) / pts.length)} stroke="var(--border)" />
+        ))}
+      </g>
+    </svg>
+  );
+}

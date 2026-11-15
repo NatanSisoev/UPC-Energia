@@ -1,57 +1,52 @@
 import { Link } from 'react-router';
-import { Bell, MessageSquare, Play, Presentation, Store, Settings as SettingsIco } from 'lucide-react';
-import { useLive } from '../live/useLive';
+import { Bell, MessageSquare, Presentation, Store, Settings as SettingsIco } from 'lucide-react';
+import { useTour } from '../tour/useTour';
 import { useSim } from '../store/useSim';
 import { fmtKw } from '../lib/format';
-import { useAlarms } from '../lib/alarms';
-import Calendar from './Calendar';
+import { activeAt, useAlarms } from '../lib/alarms';
 import ModeIndicator from './ModeIndicator';
 import ModelMenu from './ModelMenu';
-import { useTour } from '../tour/useTour';
 
 /** Top bar: identity, calendar, live figures, alarms and settings. */
 export default function Header({ onSettings, onAlarms, onChat, side }: { onSettings: () => void; onAlarms: () => void; onChat: () => void; side: 'chat' | 'alarms' | 'building' | 'fault' | null }) {
   const alarmsOpen = side === 'alarms';
   const snap = useSim((s) => s.snap);
+  const tourOn = useTour((s) => s.active);
   const alarms = useAlarms();
   const h = snap?.hour ?? 0;
-  const open = alarms.filter((a) => a.endH > h && a.severity !== 'info'); // active + upcoming warnings/critical
-  const crit = open.some((a) => a.severity === 'critical' && a.startH <= h);
+  const open = activeAt(alarms, h); // only what is active right now, same as the "Active" tab of the alarm panel
+  const crit = open.some((a) => a.severity === 'critical');
 
   return (
     <header className="relative z-30 flex h-[58px] shrink-0 items-center gap-5 border-b border-[var(--border)] bg-[var(--surface)] px-4">
       <div className="flex items-center gap-2.5">
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--accent)] text-[11px] font-bold tracking-tight text-[var(--on-accent)]">UPC</div>
         <div className="leading-tight">
-          <div className="text-[14px] font-semibold">Campus Nord · Energy</div>
-          <div className="eyebrow !text-[9.5px]">Battery &amp; demand monitor</div>
+          <div className="text-[14px] font-semibold">UPC Energia</div>
+          <div className="eyebrow !text-[9.5px]">Campus Nord · battery &amp; demand monitor</div>
         </div>
       </div>
 
-      <Calendar />
       <ModelMenu />
       {snap && <ModeIndicator />}
       <div className="flex-1" />
 
       {snap && (
         <div className="hidden items-center gap-5 2xl:flex">
-          <Stat k="Demand" v={fmtKw(snap.loadKw)} />
-          <Stat k="Solar" v={fmtKw(snap.solarKw)} />
+          <Stat k="Demand" v={fmtKw(snap.loadKw)} tip="Electricity the whole campus is using right now, before any solar or battery." />
+          <Stat k="Solar" v={fmtKw(snap.solarKw)} tip="Power the rooftop panels produce at this hour; it depends on the sun and clouds." />
           {/* battery power right now: discharging = supplying the campus, charging = taking from grid / solar */}
-          <Stat k={snap.battKw < -5 ? 'Battery out' : snap.battKw > 5 ? 'Battery in' : 'Battery idle'} v={fmtKw(Math.abs(snap.battKw))} />
-          <Stat k={snap.gridKw >= 0 ? 'Grid import' : 'Grid export'} v={fmtKw(Math.abs(snap.gridKw))} />
-          <Stat k="Price" v={`${snap.price.toFixed(3)} €/kWh`} />
-          <Stat k="CO₂" v={`${snap.co2.toFixed(3)} kg/kWh`} />
-          <Stat k="Battery charge" v={snap.capacityKwh > 0 ? `${(snap.soc * 100).toFixed(0)}%` : '—'} />
+          <Stat k={snap.battKw < -5 ? 'Battery out' : snap.battKw > 5 ? 'Battery in' : 'Battery idle'} v={fmtKw(Math.abs(snap.battKw))} tip="Battery power right now. Out = it discharges to supply the campus, in = it charges from the grid or surplus solar, idle = it does nothing." />
+          <Stat k={snap.gridKw >= 0 ? 'Grid import' : 'Grid export'} v={fmtKw(Math.abs(snap.gridKw))} tip="Power bought from the grid (import) or pushed back to it (export). Import is what costs money and emits CO₂." />
+          <Stat k="Price" v={`${snap.price.toFixed(3)} €/kWh`} tip="Price of grid electricity at this hour. The battery charges when it is low and discharges when it is high." />
+          <Stat k="CO₂" v={`${snap.co2.toFixed(3)} kg/kWh`} tip="Carbon emitted per kWh of grid electricity at this hour. Lower when the grid mix is cleaner." />
+          <Stat k="Battery charge" v={snap.capacityKwh > 0 ? `${(snap.soc * 100).toFixed(0)}%` : '—'} tip="State of charge: how full the battery is. 0 % is empty, 100 % is full." />
         </div>
       )}
 
       <div className="flex items-center gap-2">
-        <button type="button" className="btn !py-1 !text-[12px]" onClick={() => useLive.getState().start()} title="4-minute live simulation with a battery-yard failure and an e-mail alert">
-          <Play size={13} /> Live 4:00
-        </button>
-        <button type="button" className="btn !py-1 !text-[12px]" onClick={() => useTour.getState().start()} title="Guided tour of the control room (key T)">
-          <Presentation size={13} /> Tour
+        <button type="button" data-tour="tour" className={`icon-btn ${tourOn ? 'on' : ''}`} onClick={() => useTour.getState().toggle()} aria-pressed={tourOn} aria-label="Guided tour" title="Guided tour of the control room (key T); click again to close it">
+          <Presentation size={16} />
         </button>
         <Link to="/catalogue" className="icon-btn" aria-label="Equipment catalogue" title="Catalogue: batteries and solar panels">
           <Store size={16} />
@@ -78,11 +73,15 @@ export default function Header({ onSettings, onAlarms, onChat, side }: { onSetti
   );
 }
 
-function Stat({ k, v }: { k: string; v: string }) {
+function Stat({ k, v, tip }: { k: string; v: string; tip: string }) {
   return (
-    <div className="leading-tight">
+    <div className="group relative cursor-help leading-tight" tabIndex={0}>
       <div className="eyebrow !text-[9.5px]">{k}</div>
       <div className="tnum text-[13px] font-medium">{v}</div>
+      <div role="tooltip" className="card pointer-events-none invisible absolute left-1/2 top-[calc(100%+10px)] z-50 w-[230px] -translate-x-1/2 p-2.5 text-[12px] font-normal leading-snug opacity-0 transition-opacity delay-150 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100" style={{ boxShadow: 'var(--shadow-lg)' }}>
+        <div className="mb-0.5 text-[12px] font-semibold">{k}</div>
+        <div className="muted">{tip}</div>
+      </div>
     </div>
   );
 }

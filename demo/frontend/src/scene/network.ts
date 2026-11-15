@@ -223,3 +223,15 @@ export function along(path: P2[], len: number, t: number): P2 {
   }
   return path[path.length - 1];
 }
+
+/** nodes that lose their connection to the substation when the given cable segments are cut (the whole subtree below each cut) */
+export function cutNodes(net: Network, cables: number[]): Set<number> {
+  const cut = new Set<number>();
+  if (!cables.length) return cut;
+  for (const n of net.order) {
+    const pe = net.parentEdge[n];
+    if (pe < 0) continue;
+    if (cables.includes(pe) || cut.has(net.edges[pe].from)) cut.add(n);
+  }
+  return cut;
+}

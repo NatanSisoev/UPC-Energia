@@ -4,6 +4,7 @@ import { BATTERY_MODELS, PANEL_MODELS } from '../data/catalogue';
 import { derived, useSim } from '../store/useSim';
 import { roofKwp } from '../sim/engine';
 import { Seg } from './kit';
+import { sendBudgetRequest } from '../lib/budget';
 
 /**
  * Where "Ask budget" emails go. Left empty on purpose: the mail client opens with subject and body filled in and
@@ -63,9 +64,7 @@ export default function Catalog() {
                   <Spec k="Roof potential" v={`${kwp.toFixed(0)} kWp`} />
                 </dl>
                 <div className="mt-4 flex gap-2">
-                  <a
-                    className="btn-primary"
-                    href={mailto(`Budget request: ${m.name} solar panels — UPC Campus Nord`, [
+                  <button type="button" data-budget className="btn-primary" onClick={() => void sendBudgetRequest(`Budget request: ${m.name} solar panels — UPC Campus Nord`, [
                       'Hello,',
                       '',
                       `We would like a budget for a rooftop PV installation with ${m.name} modules (${m.efficiency}% efficiency).`,
@@ -75,10 +74,9 @@ export default function Catalog() {
                       'Please include supply, installation, inverters and an estimated timeline.',
                       '',
                       'Thank you.',
-                    ])}
-                  >
+                    ])}>
                     <Mail size={14} /> Ask budget
-                  </a>
+                  </button>
                   <button type="button" className="btn" onClick={() => st.setPanelModel(m.id)}>
                     Use in model
                   </button>
@@ -101,9 +99,7 @@ export default function Catalog() {
                 <Spec k="Cycles" v={m.cycles.toLocaleString('en')} />
               </dl>
               <div className="mt-4 flex gap-2">
-                <a
-                  className="btn-primary"
-                  href={mailto(`Budget request: ${m.name} battery (${m.vendor}) — UPC Campus Nord`, [
+                <button type="button" data-budget className="btn-primary" onClick={() => void sendBudgetRequest(`Budget request: ${m.name} battery (${m.vendor}) — UPC Campus Nord`, [
                     'Hello,',
                     '',
                     `We would like a budget for a ${m.name} battery storage system by ${m.vendor} (${m.capacity.toFixed(2)} MWh / ${m.power.toFixed(2)} MW, ${m.rte}% round-trip efficiency).`,
@@ -112,10 +108,9 @@ export default function Catalog() {
                     'Please include supply, installation, grid connection and maintenance.',
                     '',
                     'Thank you.',
-                  ])}
-                >
+                  ])}>
                   <Mail size={14} /> Ask budget
-                </a>
+                </button>
                 <button type="button" className="btn" onClick={() => st.installBattery(m.id)} title="Add one unit to the simulated campus">
                   <Plus size={14} /> Simulate
                 </button>

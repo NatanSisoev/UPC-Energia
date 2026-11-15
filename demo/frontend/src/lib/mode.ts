@@ -87,6 +87,7 @@ export function computeMode(s: Pick<ReturnType<typeof useSim.getState>, 'forecas
     const p = s.campus?.features.find((f) => f.properties.osmId === id)?.properties;
     if (p) scenario.push({ label: `Fault: PV array on ${p.short.replace(/^Edifici\s+/, '')}`, target: id, kind: 'fault' });
   }
+  for (const i of s.faults.cables) scenario.push({ label: `Fault: cable C-${String(i + 1).padStart(2, '0')} cut`, target: `cable:${i}`, kind: 'fault' });
   if (s.faults.outage) scenario.push({ label: `Fault: grid outage ${s.faults.outage.hours} h`, target: 'substation', kind: 'fault' });
 
   return { time, scenario, simRoofs, simUnits };

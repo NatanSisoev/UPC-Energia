@@ -15,7 +15,7 @@ import { useInsightsUi } from '../components/Insights';
 import { openFaultPanel } from '../live/faultAlertStore';
 import { useUi } from '../store/useUi';
 import type { Cover } from './actions';
-import { addSolarPanel, ask, bigRoof, faultScene, faultStep, fly, go, home, openCharts, popup, PAST_WEEK, pulse, side, trunkCable } from './actions';
+import { addSolarPanel, ask, bigRoof, chargingBackfeedHour, faultScene, faultStep, fly, go, home, openCharts, popup, PAST_WEEK, pulse, side, trunkCable } from './actions';
 import { FEATURED_BATTERY, type TF } from './facts';
 
 export type Text = string | ((f: TF) => string);
@@ -135,6 +135,15 @@ export const STEPS: TourStep[] = [
     notes: 'Read the % mix on the trunk cable, then the battery yard. Hover the timeline for the supply tooltip. Transition: “So what happens when a piece breaks?”',
     bridge: 'So what happens when a piece breaks?',
     enter: () => {
+      // show both cable colours: an hour where a building feeds solar back while the battery charges (a few extra panel
+      // rows on the biggest roof when the real week has none)
+      let h = chargingBackfeedHour();
+      if (h == null) {
+        const r = bigRoof();
+        if (r) for (let k = 0; k < 3; k++) addSolarPanel(r.id);
+        h = chargingBackfeedHour();
+      }
+      if (h != null) st().setTMin(h * 60);
       const c = trunkCable();
       if (c) st().select(c);
     },
@@ -153,7 +162,7 @@ export const STEPS: TourStep[] = [
     bullets: () => ['The yard has an extra simulated unit, so the agent has something left to plan with.', 'Faults: a battery unit, a PV array, a grid outage. The SIMULATED pill lists every difference and resets in one click.'],
     action: 'Now: yard with an added (simulated) unit',
     spot: '[data-tour="sim-pill"]',
-    notes: 'Break the original unit, then a PV array, then the outage (the app goes dark / night). Transition: “The alarms now tell the story.”',
+    notes: 'Break the original unit, then a PV array, then the outage (the map goes to night). Transition: “The alarms now tell the story.”',
     bridge: 'Now the alarms have a story to tell.',
     enter: () => {
       faultScene(0);
@@ -162,7 +171,7 @@ export const STEPS: TourStep[] = [
     clicks: [
       { label: 'break a battery unit', action: 'Now: original battery unit offline (red), the agent re-plans with what is left', spot: '[data-tour="sim-pill"]', run: () => { faultStep(1); pulse('[data-tour="sim-pill"]'); } },
       { label: 'break a solar array', action: (f) => `Now: ${f.roof} PV array offline`, spot: '[data-tour="sim-pill"]', run: () => { faultStep(2); pulse('[data-tour="sim-pill"]'); } },
-      { label: 'grid outage at night', action: 'Now: 3 h grid outage at night (dark theme)', spot: '[data-tour="sim-pill"]', run: () => { faultStep(3); popup('scenario', true); } },
+      { label: 'grid outage at night', action: 'Now: 3 h grid outage at night', spot: '[data-tour="sim-pill"]', run: () => { faultStep(3); popup('scenario', true); } },
     ],
   },
   /* 5 ------------------------------------------------------------------ */
@@ -198,16 +207,16 @@ export const STEPS: TourStep[] = [
     enter: () => go('/catalogue'),
     clicks: [
       { label: 'simulate a battery', action: 'Now: adding a 2.76 MWh unit to the simulated yard', run: () => { st().installBattery(FEATURED_BATTERY); } },
-      { label: 'ask budget (preview)', action: 'Now: “Ask budget” opens a pre-filled e-mail, here only highlighted', spot: 'a[href^="mailto:"]', run: () => pulse('a[href^="mailto:"]', 100) },
+      { label: 'ask budget (preview)', action: 'Now: “Ask budget” e-mails the request straight to the team (here only highlighted)', spot: 'button[data-budget]', run: () => pulse('button[data-budget]', 100) },
       { label: 'back to the map: impact', action: (f) => `Now: the SIMULATED pill: CO₂ ${per(f.dCo2Pct)}, cost ${per(f.dCostPct)}, with payback`, spot: '[data-tour="sim-pill"]', run: () => { go('/'); popup('scenario', true); } },
     ],
   },
   /* 7 ------------------------------------------------------------------ */
   {
     id: 'forecast',
-    kicker: '8 · Forecast and models',
-    short: 'Forecast and models',
-    title: 'Plan ahead, then check against what really happened',
+    kicker: '8 · Models and forecast',
+    short: 'Models and forecast',
+    title: 'Pick the agent, plan ahead, then check against what really happened',
     bullets: (f) => [`Week of ${f.week}: measured up to NOW, forecast after it (hatched). The agent plans on the forecast.`, `Models: ${f.models.filter((m) => m.available).map((m) => m.name).join(', ')}. Your own agent ZIP can be uploaded and replayed.`],
     action: 'Now: calendar: any recorded day opens its week',
     spot: '[data-tour="calendar"]',
@@ -218,11 +227,11 @@ export const STEPS: TourStep[] = [
       popup('calendar', true);
     },
     clicks: [
-      { label: 'generate forecast', action: 'Now: generating the forecast for the rest of the week', spot: '[data-tour="timeline"]', run: (c) => { popup('calendar', false); if (c.animate) st().generateForecast(); else useSim.setState({ fcStage: 'ready', fcReveal: 999 }); } },
-      { label: 'measured vs forecast', action: 'Now: measured overlay vs forecast, charts open', spot: '[data-tour="timeline"]', run: () => { useSim.setState({ fcStage: 'ready', fcReveal: 999 }); st().setPrefs({ showActual: true }); openCharts(); } },
-      { label: 'model: template', action: (f) => `Now: model “${f.models.find((m) => m.id === 'baseline')?.name ?? 'template'}”, week score ${f.modelWeekScore.toFixed(2)}`, spot: '[data-tour="model"]', run: async () => { popup('model', true); await st().setModel('baseline'); } },
+      { label: 'model: template', action: (f) => `Now: model “${f.models.find((m) => m.id === 'baseline')?.name ?? 'template'}”, week score ${f.modelWeekScore.toFixed(2)}`, spot: '[data-tour="model"]', run: async () => { popup('calendar', false); popup('model', true); await st().setModel('baseline'); } },
       { label: 'model: MPC', action: (f) => `Now: model “${f.modelName}”, week score ${f.modelWeekScore.toFixed(2)}`, spot: '[data-tour="model"]', run: async () => { await st().setModel('standard'); } },
       { label: 'model: hard mode', action: (f) => `Now: model “${f.modelName}”, week score ${f.modelWeekScore.toFixed(2)}`, spot: '[data-tour="model"]', run: async () => { if (st().models.some((m) => m.id === 'hard' && m.available)) await st().setModel('hard'); } },
+      { label: 'generate forecast', action: 'Now: generating the forecast for the rest of the week', spot: '[data-tour="timeline"]', run: (c) => { popup('calendar', false); popup('model', false); if (c.animate) st().generateForecast(); else useSim.setState({ fcStage: 'ready', fcReveal: 999 }); } },
+      { label: 'measured vs forecast', action: 'Now: measured overlay vs forecast, charts open', spot: '[data-tour="timeline"]', run: () => { useSim.setState({ fcStage: 'ready', fcReveal: 999 }); st().setPrefs({ showActual: true }); openCharts(); } },
     ],
   },
   /* 8 ------------------------------------------------------------------ */
@@ -231,10 +240,10 @@ export const STEPS: TourStep[] = [
     kicker: '9 · Plots and results',
     short: 'Plots and results',
     title: 'The year in plots, then the three numbers that matter',
-    bullets: (f) => [`Charts panel: demand, solar, price, CO₂ and battery for the week (${f.week}).`, 'What-if: change the CO₂ / cost weight or the battery size and the real agent re-runs.'],
+    bullets: (f) => [`Charts panel: demand, solar, price, CO₂ and battery for the week (${f.week}).`, 'Insights: real price, CO₂, solar and demand figures, and what the agent does with them.'],
     action: 'Now: the charts panel under the timeline',
     spot: '[data-tour="timeline"]',
-    notes: 'Open the What-if plots, drag the weight slider. Close on the headline slide. Transition: “That is the Monday. Questions?”',
+    notes: 'Open the insights plots. Close on the headline slide. Transition: “That is the Monday. Questions?”',
     bridge: 'That was the Monday. Questions?',
     cover: (sub) => (sub === 1 ? 'insights' : sub === 2 ? 'facts' : null),
     enter: () => {
@@ -242,7 +251,7 @@ export const STEPS: TourStep[] = [
       openCharts();
     },
     clicks: [
-      { label: 'what-if plots', action: 'Now: insights: what-if, CO₂ vs cost weight', run: () => { useInsightsUi.getState().setTab('whatif'); } },
+      { label: 'insight plots', action: 'Now: insights: what the agent does hour by hour', run: () => { useInsightsUi.getState().setTab('agent'); } },
       { label: 'headline results', action: 'Now: the three numbers', run: () => {} },
     ],
   },

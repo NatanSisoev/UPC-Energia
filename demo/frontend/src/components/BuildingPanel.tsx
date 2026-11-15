@@ -287,19 +287,23 @@ export default function BuildingPanel({ id, onClose, onAsk }: { id: string; onCl
               {pv && <Kpi k="Condition" v={pv.condition.grade} />}
             </div>
           )}
-          {pv && (
-            <button type="button" className="mt-2 text-[12px] font-medium text-[var(--accent)] hover:underline" onClick={() => useSim.getState().select(`pv:${id}`)}>
-              Full PV array sheet →
-            </button>
-          )}
-          {p.pv_fraction > 0 && (
-            <button
-              type="button"
-              className={`btn mt-2 !py-1 !text-[12px] ${broken ? '' : 'btn-danger'}`}
-              onClick={() => useSim.getState().setFaults({ roofs: broken ? faults.roofs.filter((x) => x !== id) : [...faults.roofs, id] })}
-            >
-              {broken ? 'Mark array repaired' : 'Simulate array fault'}
-            </button>
+          {(pv || p.pv_fraction > 0) && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {pv && (
+                <button type="button" className="btn justify-center !py-1.5 !text-[12px]" onClick={() => useSim.getState().setPanelUi({ buildingTab: 'solar', panelFocus: null, panelHover: null })}>
+                  Solar panels →
+                </button>
+              )}
+              {p.pv_fraction > 0 && (
+                <button
+                  type="button"
+                  className={`btn justify-center !py-1.5 !text-[12px] ${broken ? '' : 'btn-danger'} ${pv ? '' : 'col-span-2'}`}
+                  onClick={() => useSim.getState().setFaults({ roofs: broken ? faults.roofs.filter((x) => x !== id) : [...faults.roofs, id] })}
+                >
+                  {broken ? 'Mark repaired' : 'Simulate fault'}
+                </button>
+              )}
+            </div>
           )}
         </Block>
 

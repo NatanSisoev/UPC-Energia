@@ -468,6 +468,8 @@ export interface MiniFrame {
   /** battery units in the yard (container count from capacity), with fault / simulated flags */
   units: Array<{ id: string; kwh: number; fault: boolean; sim: boolean }>;
   faultRoofs: string[];
+  /** cut cable segments (network edge indices) */
+  faultCables: number[];
   /** roofs whose solar differs from the real plant (drawn in the "simulated" colour) */
   simRoofs: string[];
   outage: boolean;
@@ -694,7 +696,7 @@ export function buildMinimalLayers(
         getPath: (i: number) => M.edgePaths[i] as never,
         // every cable is drawn in its flow colour; conductor size follows how many buildings it feeds (trunks thicker)
         getWidth: (i: number) => (cid(i) === sel || cid(i) === hov ? 3 : 0.7 + Math.min(1.6, (net.edges[i].down ?? 1) * 0.06)),
-        getColor: (i: number) => (cid(i) === sel || cid(i) === hov ? rgba(ACCENT[f.dark ? 'dark' : 'light']) : rgba(colorOf(i), f.dark ? 210 : 185)) as never,
+        getColor: (i: number) => (cid(i) === sel || cid(i) === hov ? rgba(ACCENT[f.dark ? 'dark' : 'light']) : f.faultCables.includes(i) ? rgba(C_FAULT, 235) : rgba(colorOf(i), f.dark ? 210 : 185)) as never,
         widthUnits: 'meters',
         widthMinPixels: 1.2,
         capRounded: true,
@@ -702,7 +704,7 @@ export function buildMinimalLayers(
         parameters: FLAT,
         onHover: (i: { object?: number; x: number; y: number }) => onHover(i.object != null ? cid(i.object) : null, i.x, i.y),
         onClick: (i: { object?: number }) => onClick(i.object != null ? cid(i.object) : null),
-        updateTriggers: { getWidth: [sel, hov, memo.flowKey], getColor: [memo.flowKey, f.dark, sel, hov] },
+        updateTriggers: { getWidth: [sel, hov, memo.flowKey], getColor: [memo.flowKey, f.dark, sel, hov, f.faultCables.join(',')] },
       }),
     );
     // moving dots on every cable, in the flow direction. DENSITY = power (1 dot per 100 m per ~120 kW, up to 10);
