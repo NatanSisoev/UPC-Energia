@@ -187,6 +187,23 @@ it is exactly H10 — the LGB residual correction is already at (or past) its us
 p07 spread 0.6 = 23.63 (-0.08, noise): narrower net-load uncertainty is neutral. None beats H10, consistent
 with "knobs have peaked".
 
+## G. Cost-tilt probes (shift 3, built 2026-11-15 by Aiman's agent)
+
+Goal: move weight from CO2 back to cost (leaders: CO2 22.9 %, cost 27.7 %; us: 23.06 / 25.65).
+All = `_base_v2` agent + `dst_continuous` 1 (bit-identical to no-fix when there is no clock change; +0.05 locally
+in a March gap week) + `co2_expand` 1.3. `_base_h10` was rebuilt from `agent_hard/` (agent + model_lgb.json + lgb_*.txt).
+Submit in order; stop going lower in tilt as soon as one scores below 23.74 (best − 0.10).
+
+| Order | zip | co2_mult / co2_expand / price_expand | Expectation from the public curve | score | CO2 % | cost % |
+|---|---|---|---|---|---|---|
+| 1 | [a01_t16_e13_pe13.zip](probes/a01_t16_e13_pe13.zip) | 1.6 / 1.3 / 1.3 | between q06 (1.4: 23.56) and q03 (1.8: 23.80) | 23.70 | 22.69 | 26.06 |
+| 2 | [a03_t16_e13.zip](probes/a03_t16_e13.zip) | 1.6 / 1.3 / 1.0 | same, without price sharpening | 23.76 | 22.86 | 25.85 |
+| 3 | [a02_t15_e13_pe13.zip](probes/a02_t15_e13_pe13.zip) | 1.5 / 1.3 / 1.3 | only if 1 is ≥ 23.80 | 23.53 | 22.46 | 26.05 |
+| ctrl | [a00_s01_repro.zip](probes/a00_s01_repro.zip) | 1.8 / 1.3 / 1.0 | = s01 (23.84); submit only to confirm the rebuilt base | **23.84** | 23.06 | 25.65 |
+
+Verdict (H60-H63): tilting towards cost loses on public at every step (1.8 / 1.6 / 1.5 = 23.84 / 23.76 / 23.53).
+The control reproduced s01 exactly, so the rebuilt base is correct. Final candidate stays **a00 = s01** (p04 + clock fix).
+
 ## Not queued (built, but no submission planned)
 
 - [c31_mlp_b100.zip](nn/c31_mlp_b100.zip) (MLP replaces LightGBM, 10.0 ms/step): not worth a submission until section B is answered.
