@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Pause, Play, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pause, Pin, PinOff, Play, Sparkles } from 'lucide-react';
 import { derived, useSim, visibleLimitH } from '../store/useSim';
 import { ForecastCard } from './ForecastCard';
 import { useAlarms } from '../lib/alarms';
 import { fmtKw, weekMsAt } from '../lib/format';
 import { Seg } from './kit';
+import { DWELL_OPEN_MS, stripHover, togglePin } from '../lib/chartsHover';
 import { SOURCE, weekMix, type Source } from '../lib/supply';
 
 const DAY = 86_400_000;
@@ -25,6 +26,8 @@ export default function TimeBar() {
   const showActual = useSim((s) => s.showActual);
   const stage = useSim((s) => s.fcStage);
   const reveal = useSim((s) => s.fcReveal);
+  const pinned = useSim((s) => s.chartsPinned);
+  const dwelling = useSim((s) => s.chartsDwell);
   const [cardOpen, setCardOpen] = useState(false);
   useEffect(() => {
     if (stage === 'running') setCardOpen(true);
@@ -127,7 +130,32 @@ export default function TimeBar() {
   const sevColor = { critical: 'var(--danger)', warning: 'var(--warn)', info: 'var(--info)' } as const;
 
   return (
-    <div className="card pointer-events-auto flex w-full items-stretch gap-4 px-4 py-3">
+    <div
+      className="card group/tb pointer-events-auto relative flex w-full items-stretch gap-4 px-4 py-3"
+      onPointerEnter={stripHover.enter}
+      onPointerMove={stripHover.move}
+      onPointerLeave={stripHover.leave}
+      onPointerDownCapture={stripHover.down}
+    >
+      {/* dwell hint: a thin bar filling along the top border while the pointer rests here */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] overflow-hidden rounded-t-[inherit]" aria-hidden>
+        <div
+          className="h-full bg-[var(--accent)]"
+          style={{ width: dwelling ? '100%' : '0%', opacity: dwelling ? 0.8 : 0, transition: dwelling ? `width ${DWELL_OPEN_MS}ms linear` : 'none' }}
+        />
+      </div>
+      {/* secondary control: the panel opens on a long hover; pin keeps it open regardless of hover (Esc / click again to close) */}
+      <button
+        type="button"
+        style={{ position: 'absolute' }}
+        onClick={togglePin}
+        className={`icon-btn absolute right-2 top-[-14px] z-30 !h-7 !w-7 border border-[var(--border-strong)] bg-[var(--surface)] transition-opacity focus-visible:opacity-100 ${pinned ? 'on opacity-100' : 'opacity-0 group-hover/tb:opacity-100'}`}
+        aria-label={pinned ? 'Unpin charts' : 'Pin and expand charts'}
+        aria-pressed={pinned}
+        title={pinned ? 'Collapse charts (Esc)' : 'Pin: expand to more charts'}
+      >
+        {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+      </button>
       {/* transport */}
       <div className="flex shrink-0 items-center gap-1.5">
         <button type="button" onClick={() => st.setPlaying(!playing)} className={`icon-btn ${playing ? 'on' : ''}`} aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause' : 'Play'}>
@@ -196,7 +224,7 @@ export default function TimeBar() {
           )}
           {/* not generated yet: the future is locked until the user asks for the forecast */}
           {nowH != null && stage !== 'ready' && lim < r1 && (
-            <div className="absolute inset-y-0 flex items-center justify-center" style={{ left: `${Math.max(0, x(lim))}%`, right: 0, background: 'repeating-linear-gradient(135deg, transparent 0 6px, var(--border) 6px 7px)' }}>
+            <div className="absolute inset-y-0 z-20 flex items-center justify-center" style={{ left: `${Math.max(0, x(lim))}%`, right: 0, background: 'repeating-linear-gradient(135deg, transparent 0 6px, var(--border) 6px 7px)' }}>
               {stage === 'off' ? (
                 <button
                   type="button"

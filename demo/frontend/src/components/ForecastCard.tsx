@@ -1,4 +1,5 @@
-import { Check, Loader2, Sparkles, X } from 'lucide-react';
+import { useState } from 'react';
+import { Check, ChevronDown, Loader2, Sparkles, X } from 'lucide-react';
 import { derived, useSim } from '../store/useSim';
 import { fmtKw } from '../lib/format';
 
@@ -32,6 +33,7 @@ function backtest() {
 /** Floating status card above the timeline while the forecast is generated, and its summary afterwards. */
 export function ForecastCard({ onClose }: { onClose: () => void }) {
   const stage = useSim((s) => s.fcStage);
+  const [unfold, setUnfold] = useState(false);
   const reveal = useSim((s) => s.fcReveal);
   useSim((s) => s.version);
   const d = derived.current;
@@ -39,6 +41,8 @@ export function ForecastCard({ onClose }: { onClose: () => void }) {
   const total = Math.max(1, d.week.load.length - d.nowH - 1);
   const p = stage === 'ready' ? 1 : Math.min(1, reveal / total);
   const active = STEPS.findIndex((s) => p < s.to);
+  // collapsed: only the latest step (the running one, or the last once ready)
+  const shown = stage === 'ready' ? STEPS.length - 1 : Math.max(0, active);
   const bt = stage === 'ready' ? backtest() : null;
   const maxPv = Math.max(...Array.from(d.week.pv).slice(d.nowH + 1), 0);
 
@@ -49,13 +53,19 @@ export function ForecastCard({ onClose }: { onClose: () => void }) {
           <Sparkles size={14} className="text-[var(--accent)]" />
           <span className="text-[13px] font-semibold">{stage === 'ready' ? 'Forecast ready' : 'Generating forecast…'}</span>
         </div>
-        <button type="button" className="icon-btn !h-6 !w-6" onClick={onClose} aria-label="Close">
-          <X size={12} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button type="button" className="icon-btn !h-6 !w-6" onClick={() => setUnfold(!unfold)} aria-expanded={unfold} aria-label={unfold ? 'Show only the latest step' : 'Show all steps'} title={unfold ? 'Collapse' : 'Show all steps'}>
+            <ChevronDown size={12} style={{ transform: unfold ? 'rotate(180deg)' : undefined }} />
+          </button>
+          <button type="button" className="icon-btn !h-6 !w-6" onClick={onClose} aria-label="Close">
+            <X size={12} />
+          </button>
+        </div>
       </div>
 
       <ol className="mt-2.5 flex flex-col gap-1.5">
         {STEPS.map((s, i) => {
+          if (!unfold && i !== shown) return null;
           const done = stage === 'ready' || i < active;
           const now = stage === 'running' && i === active;
           return (

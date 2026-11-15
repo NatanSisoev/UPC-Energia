@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import MapView from './components/MapView';
 import TimeBar from './components/TimeBar';
+import ChartGrid from './components/ChartGrid';
 import Header from './components/Header';
 import Assistant from './components/Assistant';
 import AlarmPanel from './components/AlarmPanel';
@@ -10,6 +11,7 @@ import Settings, { type SettingsTab } from './components/Settings';
 import SideFrame from './components/SideFrame';
 import { useSim } from './store/useSim';
 import { useDark } from './lib/theme';
+import { closeCharts, panelHover } from './lib/chartsHover';
 import { LiveHud, LiveRunner } from './live/LiveOverlay';
 
 export type Side = 'chat' | 'alarms' | 'building' | null;
@@ -21,6 +23,7 @@ export type Side = 'chat' | 'alarms' | 'building' | null;
 export default function App() {
   const ready = useSim((s) => s.snap !== null);
   const selection = useSim((s) => s.selection);
+  const pinned = useSim((s) => s.chartsPinned || s.chartsOpen);
   const dark = useDark();
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   const [side, setSide] = useState<Side>('chat');
@@ -29,7 +32,7 @@ export default function App() {
 
   /* data + clock (only advances while the week is playing) */
   useEffect(() => {
-    useSim.getState().load();
+    if (!useSim.getState().campus) useSim.getState().load(); // keep the simulation when coming back from /catalogue
     let last = performance.now();
     const id = window.setInterval(() => {
       const n = performance.now();
@@ -50,6 +53,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      if (closeCharts()) return; // Esc first closes / unpins the charts
       setSettings((s) => {
         if (!s) useSim.getState().select(null);
         return null;
@@ -66,7 +70,8 @@ export default function App() {
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[var(--bg)]">
       <Header onSettings={() => setSettings('appearance')} onAlarms={() => toggle('alarms')} onChat={() => toggle('chat')} side={side} />
       <div className="flex min-h-0 flex-1">
-        <main className="relative min-w-0 flex-1">
+        <main className="flex min-w-0 flex-1 flex-col">
+          <div className="relative min-h-0 flex-1">
           <MapView dark={dark} onAlarms={() => setSide('alarms')} />
           <LiveRunner />
           <LiveHud />
@@ -76,6 +81,12 @@ export default function App() {
             </div>
           )}
           <div className="pointer-events-none absolute bottom-0.5 right-2 z-0 text-[9.5px] faint">© OpenStreetMap contributors · UPC Campus Nord data</div>
+          </div>
+          {ready && pinned && (
+            <section onPointerEnter={panelHover.enter} onPointerLeave={panelHover.leave} className="h-1/2 min-h-0 shrink-0 border-t border-[var(--border)] bg-[var(--bg)] p-2" aria-label="Timeline charts">
+              <ChartGrid />
+            </section>
+          )}
         </main>
         {ready && side && (side !== 'building' || selection) && (
           <SideFrame>
