@@ -1,0 +1,131 @@
+"""One-off: derive experiments/hardk/build_model.py kernel option from the copied original (kept for provenance)."""
+p = 'experiments/hardk/build_model.py'
+s = open(p, encoding='utf-8').read()
+
+
+def rep(old, new):
+    global s
+    assert old in s, old[:60]
+    s = s.replace(old, new, 1)
+
+
+rep('from sim.simulator import HARD, build_obs\n', 'from sim.simulator import HARD, build_obs\nimport experiments.hardk.kernel as kn\n')
+
+helpers = '''
+# ---------------------------------------------------------------- kernel (date-centred) variants
+def fit_profiles_k(vals, index, dtype, use, W):
+    """Like fit_profiles, but cell (m, day-type, hour) = mean over days weighted by W[m] (a (12, N) kernel weight);
+    day-type cells and the 2-day shrinkage towards (wd profile x weekend ratio) are as before, with weighted counts."""
+    hr = index.hour.values
+    prof = np.full((12, 3, 24), np.nan)
+    ok_v = np.isfinite(vals)
+    for m in range(12):
+        w = np.where(use & ok_v, W[m], 0.0)
+        mm = w > 0
+        if not mm.any():
+            continue
+        wd = mm & (dtype == 0)
+        if wd.sum() < 24:                                       # no working days: fall back to all days
+            wd = mm
+        cnt = np.bincount(hr[wd], weights=w[wd], minlength=24)
+        wd_prof = np.bincount(hr[wd], weights=vals[wd] * w[wd], minlength=24) / np.maximum(cnt, 1e-12)
+        wd_prof[cnt <= 0] = np.nan
+        tot0 = np.average(vals[wd], weights=w[wd])
+        prof[m, 0] = wd_prof
+        for d in (1, 2):
+            dd = mm & (dtype == d)
+            cnt_d = np.bincount(hr[dd], weights=w[dd], minlength=24)
+            cell = np.bincount(hr[dd], weights=vals[dd] * w[dd], minlength=24) / np.maximum(cnt_d, 1e-12)
+            cell[cnt_d <= 0] = np.nan
+            ratio = (np.average(vals[dd], weights=w[dd]) / tot0) if dd.sum() and np.isfinite(tot0) and tot0 else 1.0
+            prior = wd_prof * ratio
+            with np.errstate(invalid="ignore"):
+                prof[m, d] = np.where(cnt_d > 0, (cnt_d * cell + 2 * prior) / (cnt_d + 2), prior)
+    return prof
+
+
+def monthly_kbar_k(pv, clear, use, W):
+    """Kernel version of monthly_kbar: weighted sum(pv) / sum(clear) per target month (NaN if no weight)."""
+    kbar = np.full(12, np.nan)
+    for m in range(12):
+        w = np.where(use & (clear > ah.CS_MIN_KW), W[m], 0.0)
+        if (w * clear).sum() > 0:
+            kbar[m] = (w * pv).sum() / (w * clear).sum()
+    return kbar
+
+
+def _fill_nov_kbar(kbar):
+    if not np.isfinite(kbar[10]):
+        kbar[10] = np.nanmean([kbar[9], kbar[11]])
+    return kbar
+
+
+'''
+rep('def _fill_gaps(prof, month=10', helpers + 'def _fill_gaps(prof, month=10')
+
+rep('def build_params(holdout=False, k_scen=7, spread_scale=1.0, spread_mode="lead", terminal_value=0.0, verbose=True):',
+    'def build_params(holdout=False, k_scen=7, spread_scale=1.0, spread_mode="lead", terminal_value=0.0, verbose=True,\n'
+    '                 kernel=None):')
+rep('''    kbar = monthly_kbar(df["pv_kw"].values, clear, allowed_df, month_df)
+    kbar[10] = np.nanmean([kbar[9], kbar[11]])
+''', '''    tgt = None
+    if kernel is None:
+        kbar = monthly_kbar(df["pv_kw"].values, clear, allowed_df, month_df)
+        kbar[10] = np.nanmean([kbar[9], kbar[11]])
+    else:                                                       # target week = hold-out week / real test week
+        tgt = kn.centres_holdout(df, sig) if holdout else kn.centres_final()
+        kbar = _fill_nov_kbar(monthly_kbar_k(df["pv_kw"].values, clear, allowed_df, kernel.weights(df.index, tgt)))
+''')
+rep('''        load_prof = _fill_gaps(fit_profiles(df["load_kw"].values, df.index, dt_load, use_df))
+        price_prof = _fill_gaps(fit_profiles(sig["price"].values, sig.index, dt_sig, use_sig))
+        co2_prof = _fill_gaps(fit_profiles(sig["co2"].values, sig.index, dt_sig, use_sig))
+        profs[c] = (price_prof, co2_prof, load_prof)
+''', '''        if kernel is None:
+            load_prof = _fill_gaps(fit_profiles(df["load_kw"].values, df.index, dt_load, use_df))
+            price_prof = _fill_gaps(fit_profiles(sig["price"].values, sig.index, dt_sig, use_sig))
+            co2_prof = _fill_gaps(fit_profiles(sig["co2"].values, sig.index, dt_sig, use_sig))
+        else:                                                   # centre = middle of the left-out chunk
+            ctr = kn.centres_chunk(c, sig)
+            Wd, Ws = kernel.weights(df.index, ctr), kernel.weights(sig.index, ctr)
+            load_prof = _fill_gaps(fit_profiles_k(df["load_kw"].values, df.index, dt_load, use_df, Wd))
+            price_prof = _fill_gaps(fit_profiles_k(sig["price"].values, sig.index, dt_sig, use_sig, Ws))
+            co2_prof = _fill_gaps(fit_profiles_k(sig["co2"].values, sig.index, dt_sig, use_sig, Ws))
+        profs[c] = (price_prof, co2_prof, load_prof)
+''')
+rep('''        kbar_c = monthly_kbar(df["pv_kw"].values, clear, allowed_df & (chunk_df != c), month_df)
+        kbar_c[10] = np.nanmean([kbar_c[9], kbar_c[11]])
+''', '''        if kernel is None:
+            kbar_c = monthly_kbar(df["pv_kw"].values, clear, allowed_df & (chunk_df != c), month_df)
+            kbar_c[10] = np.nanmean([kbar_c[9], kbar_c[11]])
+        else:
+            kbar_c = _fill_nov_kbar(monthly_kbar_k(df["pv_kw"].values, clear, allowed_df & (chunk_df != c),
+                                                   kernel.weights(df.index, kn.centres_chunk(c, sig))))
+''')
+rep('''    price_prof, co2_prof, load_prof = profs[0]                   # final model: fit on everything
+''', '''    if kernel is None:
+        price_prof, co2_prof, load_prof = profs[0]               # final model: fit on everything
+    else:                                                        # kernel: centred on the target week, nothing left out
+        Wd, Ws = kernel.weights(df.index, tgt), kernel.weights(sig.index, tgt)
+        load_prof = _fill_gaps(fit_profiles_k(df["load_kw"].values, df.index, dt_load, allowed_df, Wd))
+        price_prof = _fill_gaps(fit_profiles_k(sig["price"].values, sig.index, dt_sig, allowed_sig, Ws))
+        co2_prof = _fill_gaps(fit_profiles_k(sig["co2"].values, sig.index, dt_sig, allowed_sig, Ws))
+''')
+rep('''    p.add_argument("--out", default=None, help="output json (default agent_hard/model.json, or model_holdout.json)")''',
+    '''    p.add_argument("--out", required=True, help="output json; must live under experiments/hardk/out/")
+    p.add_argument("--bw", type=float, default=None, help="kernel half-width in days (omit: month profiles)")
+    p.add_argument("--cyclic", action="store_true", help="cyclic day-of-year distance")
+    p.add_argument("--kernel", choices=("tri", "gauss"), default="tri")''')
+rep('''    params = build_params(holdout=a.holdout, k_scen=a.k, spread_scale=a.spread_scale,
+                          spread_mode=a.spread_mode, terminal_value=a.tv)
+    out = Path(a.out) if a.out else (ROOT / "experiments/hard/model_holdout.json" if a.holdout
+                                     else ROOT / "agent_hard/model.json")
+''', '''    out = Path(a.out).resolve()
+    assert (ROOT / "experiments/hardk/out") in out.parents, "outputs must go under experiments/hardk/out/"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    kernel = kn.Kernel(a.bw, a.cyclic, a.kernel) if a.bw else None
+    params = build_params(holdout=a.holdout, k_scen=a.k, spread_scale=a.spread_scale,
+                          spread_mode=a.spread_mode, terminal_value=a.tv, kernel=kernel)
+    params.update(horizon=24, n_grid=121)                        # knobs the agent reads (as in agent_hard/model.json)
+''')
+open(p, 'w', encoding='utf-8').write(s)
+print("patched")
