@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Deck, MapView as DeckMapView, LightingEffect, AmbientLight, DirectionalLight, FlyToInterpolator, LinearInterpolator, WebMercatorViewport } from '@deck.gl/core';
+import { Deck, MapView as DeckMapView, LightingEffect, AmbientLight, DirectionalLight, FlyToInterpolator, LinearInterpolator } from '@deck.gl/core';
 import { Cloud, Crosshair, Layers as LayersIco, Moon, Sun } from 'lucide-react';
 import { derived, useSim, workingBatteries } from '../store/useSim';
 
 const derivedRef = () => derived.current;
 import { buildMinimal, buildMinimalLayers, cableFlow, dayLevel, heatColor, heatOf, HEAT_CSS, parsePanelId, weekPeakKw, type MiniWorld } from '../scene/minimal';
 import { activeAt, useAlarms } from '../lib/alarms';
+import { openFaultPanel } from '../live/faultAlertStore';
 import { computeMode, useViewMode } from '../lib/mode';
 import EnergyFlow from './EnergyFlow';
 import { toLonLat } from '../scene/geo';
@@ -55,36 +56,12 @@ export const camera = {
 };
 
 /**
- * Keep the camera inside the mapped area so no empty background is ever visible: project the four screen corners
- * onto the ground (this accounts for pitch and bearing), zoom in until their extent fits in the bbox, then shift the
- * centre so it lies inside.
+ * Camera limits: no pan restriction any more (the land plane extends far beyond the mapped data), only a zoom range
+ * wide enough to see the whole surrounding area. Pitch / bearing are left untouched so the 3D tilt works at any zoom.
  */
-function fitToBbox<T extends ViewState>(vs: T, bbox: [number, number, number, number], width: number, height: number): T {
-  if (width < 2 || height < 2) return vs;
-  const out = { ...vs };
-  const bw = bbox[2] - bbox[0];
-  const bh = bbox[3] - bbox[1];
-  for (let it = 0; it < 6; it++) {
-    const vp = new WebMercatorViewport({ width, height, longitude: out.longitude, latitude: out.latitude, zoom: out.zoom, pitch: out.pitch, bearing: out.bearing });
-    const pts = [[0, 0], [width, 0], [0, height], [width, height]].map((p) => vp.unproject(p) as number[]);
-    const lons = pts.map((p) => p[0]);
-    const lats = pts.map((p) => p[1]);
-    const x0 = Math.min(...lons);
-    const x1 = Math.max(...lons);
-    const y0 = Math.min(...lats);
-    const y1 = Math.max(...lats);
-    const over = Math.max((x1 - x0) / bw, (y1 - y0) / bh);
-    if (over > 1) {
-      out.zoom += Math.log2(over) + 0.005;
-      continue;
-    }
-    const dx = x0 < bbox[0] ? bbox[0] - x0 : x1 > bbox[2] ? bbox[2] - x1 : 0;
-    const dy = y0 < bbox[1] ? bbox[1] - y0 : y1 > bbox[3] ? bbox[3] - y1 : 0;
-    if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) break;
-    out.longitude += dx;
-    out.latitude += dy;
-  }
-  return out;
+const MIN_ZOOM = 11.5;
+function fitToBbox<T extends ViewState>(vs: T, _bbox: [number, number, number, number], _width: number, _height: number): T {
+  return vs.zoom < MIN_ZOOM ? { ...vs, zoom: MIN_ZOOM } : vs;
 }
 
 const controllerFor = (is3d: boolean) => ({ inertia: 250, dragRotate: is3d, touchRotate: is3d, keyboard: false });
@@ -110,7 +87,7 @@ function lights(elev: number, az: number, sunOn: boolean) {
   });
 }
 
-export default function MapView({ dark, onAlarms }: { dark: boolean; onAlarms: () => void }) {
+export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const compassRef = useRef<HTMLDivElement>(null);
@@ -688,8 +665,9 @@ export default function MapView({ dark, onAlarms }: { dark: boolean; onAlarms: (
           {nowAlarms.length > 0 && (
             <button
               type="button"
-              onClick={onAlarms}
-              className="fade-in absolute left-1/2 top-4 z-10 flex max-w-[460px] -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-1.5 text-[12.5px]"
+              onClick={() => openFaultPanel(nowAlarms.find((a) => a.severity === 'critical') ?? nowAlarms[0])}
+              aria-label={`Open details: ${nowAlarms[0].title}`}
+              className="fade-in absolute left-1/2 top-4 z-10 flex max-w-[460px] -translate-x-1/2 cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[12.5px] hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
               style={{ background: 'var(--surface)', borderColor: crit ? 'var(--danger)' : 'var(--warn)', boxShadow: 'var(--shadow)' }}
             >
               <span className="blink h-2 w-2 rounded-full" style={{ background: crit ? 'var(--danger)' : 'var(--warn)' }} />

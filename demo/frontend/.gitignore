@@ -25,3 +25,4 @@ dist-ssr
 
 # wide OSM extract (4.5 MB, refetch with the curl line in scripts/build-ground-data.mjs)
 data-raw/ground-wide-overpass.json
+data-raw/ground-outer-overpass.json

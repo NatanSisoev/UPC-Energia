@@ -505,6 +505,14 @@ function xrayData(M: MiniWorld, selB: number) {
 const FLAT ={ depthCompare: 'always', depthWriteEnabled: false } as never;
 const MAT = { ambient: 0.62, diffuse: 0.5, shininess: 16, specularColor: [140, 140, 140] } as never;
 
+const majorCache = new WeakMap<object, MiniWorld['roads']>();
+/** major roads, computed once per world (a fresh array every frame would re-upload the layer's buffers) */
+function majorRoads(M: MiniWorld) {
+  let r = majorCache.get(M);
+  if (!r) majorCache.set(M, (r = M.roads.filter((x) => x.major)));
+  return r;
+}
+
 export function buildMinimalLayers(
   M: MiniWorld,
   f: MiniFrame,
@@ -539,7 +547,7 @@ export function buildMinimalLayers(
   layers.push(
     new SolidPolygonLayer({
       id: 'land',
-      data: [{ polygon: [[bx0, by0], [bx1, by0], [bx1, by1], [bx0, by1]] }],
+      data: [{ polygon: [[bx0 - (bx1 - bx0) * 4, by0 - (by1 - by0) * 4], [bx1 + (bx1 - bx0) * 4, by0 - (by1 - by0) * 4], [bx1 + (bx1 - bx0) * 4, by1 + (by1 - by0) * 4], [bx0 - (bx1 - bx0) * 4, by1 + (by1 - by0) * 4]] }],
       getPolygon: (g: { polygon: number[][] }) => g.polygon as never,
       getFillColor: rgba(P('land')) as never,
       parameters: FLAT,
@@ -563,7 +571,7 @@ export function buildMinimalLayers(
     }),
     new PathLayer({
       id: 'road-edge',
-      data: M.roads.filter((r) => r.major),
+      data: majorRoads(M),
       getPath: (r: MiniWorld['roads'][number]) => r.path as never,
       getWidth: (r: MiniWorld['roads'][number]) => r.w + 2,
       getColor: rgba(P('roadEdge')) as never,
@@ -749,7 +757,7 @@ export function buildMinimalLayers(
   };
   // X-ray: while the camera orbits a selected building or cable in 3D the others turn into see-through wireframes so the selection stands out
   const selB = sel ? M.ids.indexOf(sel.startsWith('pv:') ? sel.slice(3) : sel) : -1;
-  const cableSel = !!sel && sel.startsWith('cable:'); // a focused cable: every building turns to wireframe so the cable reads clearly
+  const cableSel = !!sel && (sel.startsWith('cable:') || sel === 'battery' || sel === 'substation'); // a focused cable, the battery or the grid substation: every building turns to wireframe so it reads clearly
   const xray = e3 && f.orbiting && (selB >= 0 || cableSel);
   const xr = xrayData(M, xray ? selB : -1);
   if (xray) {
