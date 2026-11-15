@@ -131,7 +131,7 @@ export default function TimeBar() {
 
   return (
     <div
-      className="card group/tb pointer-events-auto relative flex w-full items-stretch gap-4 px-4 py-3"
+      className="group/tb pointer-events-auto relative flex w-full items-stretch gap-4 px-4 py-3"
       onPointerEnter={stripHover.enter}
       onPointerMove={stripHover.move}
       onPointerLeave={stripHover.leave}
@@ -145,17 +145,6 @@ export default function TimeBar() {
         />
       </div>
       {/* secondary control: the panel opens on a long hover; pin keeps it open regardless of hover (Esc / click again to close) */}
-      <button
-        type="button"
-        style={{ position: 'absolute' }}
-        onClick={togglePin}
-        className={`icon-btn absolute right-2 top-[-14px] z-30 !h-7 !w-7 border border-[var(--border-strong)] bg-[var(--surface)] transition-opacity focus-visible:opacity-100 ${pinned ? 'on opacity-100' : 'opacity-0 group-hover/tb:opacity-100'}`}
-        aria-label={pinned ? 'Unpin charts' : 'Pin and expand charts'}
-        aria-pressed={pinned}
-        title={pinned ? 'Collapse charts (Esc)' : 'Pin: expand to more charts'}
-      >
-        {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-      </button>
       {/* transport */}
       <div className="flex shrink-0 items-center gap-1.5">
         <button type="button" onClick={() => st.setPlaying(!playing)} className={`icon-btn ${playing ? 'on' : ''}`} aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause' : 'Play'}>
@@ -330,18 +319,30 @@ export default function TimeBar() {
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-col items-end justify-between gap-1.5">
-        <Seg
-          label="Timeline zoom"
-          value={zoom}
-          onChange={setZoom}
-          options={[
-            ['week', 'Week'],
-            ['day', 'Day'],
-          ]}
-        />
+      <div className="flex shrink-0 flex-col items-end justify-center gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={togglePin}
+            className={`icon-btn !h-[26px] !w-[26px] shrink-0 border border-[var(--border-strong)] bg-[var(--surface)] ${pinned ? 'on' : ''}`}
+            aria-label={pinned ? 'Unpin charts' : 'Pin charts open'}
+            aria-pressed={pinned}
+            title={pinned ? 'Unpin charts (Esc)' : 'Pin charts open'}
+          >
+            {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+          </button>
+          <Seg
+            label="Timeline zoom"
+            value={zoom}
+            onChange={setZoom}
+            options={[
+              ['week', 'Week'],
+              ['day', 'Day'],
+            ]}
+          />
+        </div>
         {nowH != null && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-end gap-3 whitespace-nowrap leading-none">
             {stage === 'ready' && (
               <>
                 {!cardOpen && (

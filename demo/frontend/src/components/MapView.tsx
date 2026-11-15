@@ -657,7 +657,7 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
           )}
 
           {/* bottom-right: where the power comes from (campus, or the selected building) */}
-          <div className="pointer-events-none absolute bottom-[112px] right-4 z-10">
+          <div className="pointer-events-none absolute bottom-4 right-4 z-10">
             <EnergyFlow />
           </div>
 
@@ -701,7 +701,7 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
           )}
 
           {/* bottom-left (above the timeline): legend, collapsed to a chip */}
-          <div className="absolute bottom-[112px] left-4 z-10">
+          <div className="absolute bottom-4 left-4 z-10">
             {showLegend || legendOpen ? (
               <div className="card fade-in w-[220px] p-3" onMouseLeave={() => setLegendOpen(false)}>
                 <div className="mb-2 flex items-center justify-between">
