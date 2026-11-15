@@ -1,4 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+/** How long the "Forecast ready" notice stays before it fades out, and the fade duration. */
+const READY_DISMISS_MS = 4000;
+const READY_FADE_MS = 400;
 import { Check, ChevronDown, Loader2, Sparkles, X } from 'lucide-react';
 import { derived, useSim } from '../store/useSim';
 import { fmtKw } from '../lib/format';
@@ -34,6 +38,19 @@ function backtest() {
 export function ForecastCard({ onClose }: { onClose: () => void }) {
   const stage = useSim((s) => s.fcStage);
   const [unfold, setUnfold] = useState(false);
+  const [fading, setFading] = useState(false);
+  // the "ready" notice dismisses itself; timers are cleared on unmount / new generation
+  useEffect(() => {
+    setFading(false);
+    if (stage !== 'ready') return;
+    const t1 = window.setTimeout(() => setFading(true), READY_DISMISS_MS);
+    const t2 = window.setTimeout(onClose, READY_DISMISS_MS + READY_FADE_MS);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage]);
   const reveal = useSim((s) => s.fcReveal);
   useSim((s) => s.version);
   const d = derived.current;
@@ -47,7 +64,10 @@ export function ForecastCard({ onClose }: { onClose: () => void }) {
   const maxPv = Math.max(...Array.from(d.week.pv).slice(d.nowH + 1), 0);
 
   return (
-    <div className="card fade-in absolute bottom-[calc(100%+10px)] right-0 z-20 w-[360px] p-3.5" style={{ boxShadow: 'var(--shadow-lg)' }}>
+    <div
+      className="card fade-in absolute bottom-[calc(100%+10px)] right-0 z-20 w-[360px] p-3.5"
+      style={{ boxShadow: 'var(--shadow-lg)', opacity: fading ? 0 : 1, animation: fading ? 'none' : undefined, transition: `opacity ${READY_FADE_MS}ms ease` }}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-[var(--accent)]" />
