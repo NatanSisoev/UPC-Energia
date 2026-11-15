@@ -1,5 +1,5 @@
 /** Default solution / fallback per fault type, in plain language (shown in the alert and in the e-mail). */
-export type FaultType = 'battery' | 'pv' | 'outage' | 'cable' | 'substation' | 'generic';
+export type FaultType = 'battery' | 'pv' | 'outage' | 'cable' | 'substation' | 'demand' | 'price' | 'co2' | 'soc' | 'data' | 'generic';
 
 export interface PlaybookEntry {
   label: string;
@@ -34,6 +34,31 @@ export const FAULT_PLAYBOOK: Record<FaultType, PlaybookEntry> = {
     happened: ['The monitoring system raised an alarm for this asset or condition.', 'It does not match a known equipment fault, so check the readings before acting.'],
     label: 'Alarm',
     solution: ['Check the asset and its latest readings on the map and the timeline.', 'If it persists, contact the on-call technician.'],
+  },
+  soc: {
+    happened: ['The battery is nearly empty, so there is little stored energy left to use.', 'The grid covers the whole load for now; an outage in this window could not be bridged by the battery.'],
+    label: 'Battery low',
+    solution: ['The grid covers the load while the battery is low.', 'The agent recharges the battery in the next cheap or low-CO2 hours.'],
+  },
+  demand: {
+    happened: ['Campus demand went above the configured demand limit.', 'The substation and supply contract are loaded beyond the limit, which can mean extra grid cost or stress on the connection.'],
+    label: 'Over-demand',
+    solution: ['The battery discharges to shave the peak, within its power limit.', 'If the peak persists, defer flexible loads (HVAC, charging) to off-peak hours.'],
+  },
+  price: {
+    happened: ['The grid price is above the configured high-price threshold.', 'Every kWh bought now costs more than usual, so this is the most valuable time to use stored energy.'],
+    label: 'Price spike',
+    solution: ['The agent discharges the battery to avoid buying at the peak price.', 'It recharges later when the price is lower.'],
+  },
+  co2: {
+    happened: ['The grid carbon intensity is above the configured threshold.', 'Energy bought now is dirtier than usual, which raises campus CO2.'],
+    label: 'High grid CO₂',
+    solution: ['The agent discharges the battery and uses solar first to avoid dirty grid energy.', 'It recharges in cleaner, lower-CO2 hours.'],
+  },
+  data: {
+    happened: ['Meter data is missing for one or more hours; values resume afterwards.', 'The twin cannot see the real load or solar during the gap, so those hours are estimated.'],
+    label: 'Telemetry gap',
+    solution: ['Keep operating on the last known values and the forecast.', 'Check the meter and data link if gaps repeat.'],
   },
   substation: {
     happened: ["A substation is down, so the buildings it feeds lose their normal supply.", "Local battery and solar can island them while the grid side is repaired."],

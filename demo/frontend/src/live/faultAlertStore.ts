@@ -42,7 +42,7 @@ export function openFaultPanel(alarm?: Alarm | null): void {
   if (alarm) {
     focus = alarm.id;
     if (!st.shown.some((i) => i.key === alarm.id)) {
-      const type: FaultType = alarm.id.startsWith('bat-') ? 'battery' : alarm.id.startsWith('pv-') ? 'pv' : alarm.id === 'outage' ? 'outage' : alarm.target === 'substation' ? 'substation' : 'generic';
+      const type: FaultType = alarm.id.startsWith('bat-') ? 'battery' : alarm.id.startsWith('pv-') ? 'pv' : alarm.id === 'outage' ? 'outage' : alarm.kind === 'demand' || alarm.kind === 'price' || alarm.kind === 'co2' || alarm.kind === 'soc' || alarm.kind === 'data' ? alarm.kind : alarm.target === 'substation' ? 'substation' : 'generic';
       const inc: Incident = { key: alarm.id, title: alarm.title, line: alarm.detail, type, asset: alarm.target && alarm.target !== 'battery' && alarm.target !== 'substation' ? (useSim.getState().campus?.features.find((f) => f.properties.osmId === alarm.target)?.properties.short ?? alarm.target) : alarm.target ?? 'Campus', at: simClock() };
       extra = [inc, ...extra.filter((i) => i.key !== inc.key)].slice(0, 8);
     }
