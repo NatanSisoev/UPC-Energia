@@ -1,9 +1,25 @@
 # Hard Mode — handoff to the next session
 
+**NEWER (2026-11-14 night): read `docs/HARD_MODE_PLAN.md` first** - current state, submit queue and the exact
+step-by-step plan. This file remains the reference for the Hard Mode rules and the agent's design.
+
 Written Saturday 2026-11-14, ~17:50, by Natan's agent. **Read this whole file before touching anything.**
 It replaces the session context: everything known about Hard Mode, what is built, what is not, and the exact plan.
 
 ## 0. Where things stand (one paragraph)
+
+**UPDATE 2026-11-14 ~19:30 — shift 1 items are DONE.** `experiments/hard/build_model.py` fits everything and wrote
+`agent_hard/model.json`; the agent runs (20 tests in `tests/test_agent_hard.py`, planner = 99.6 % of bound with
+perfect forecasts). Hold-out (last 7 train days of each month, model fitted without them): **agent 20.32 = 90.7 %
+of the 22.40 bound**, 0 infractions, ~8 ms/step fresh-process. Ladder: perfect market only 21.34, perfect
+load/solar only 21.16 → forecast quality is the remaining ~2 points (LightGBM residuals = next work item).
+Tuned: full spread (flat mode), HORIZON 24, 121 grid points, terminal value 0 — knobs live in model.json.
+`python -m sim.check --hard --zip` builds `submission_hard.zip` (agent.py + model.json at the root), the official
+`check_submission.py` accepts it, and sim.check has `--hard`. Docs updated (CHALLENGE.md, CLAUDE.md,
+SOLUTION.md §10). NOT yet submitted to the Hard Mode leaderboard (human does that). See `docs/SOLUTION.md` §10.
+
+The rest of this file describes the state before the shift-1 work; sections 1-2 and 6 (rules, numbers, gotchas)
+are still accurate and section 4.3's schema is unchanged (plus the new optional keys spread_mode/horizon/n_grid/terminal_value).
 
 Standard mode is finished (leaderboard 6.43 = the ceiling, tied with everyone; see `docs/SOLUTION.md`).
 The organisers opened **Hard Mode** with its own leaderboard. For Hard Mode the simulator scenario and the

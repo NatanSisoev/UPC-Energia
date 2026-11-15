@@ -40,15 +40,16 @@ Run `git branch --show-current` first. Your branch = your human. Commit and push
 Start every session with the Setup block above, then read `PLAN.md` and `docs/HANDOFF.md`.
 
 ### Branch `natan` — MODEL track: optimizer
-Owner of `agent/agent.py` and `experiments/oracle/`, `experiments/rule_v2/`, `experiments/mpc/`.
+Owner of `agent/agent.py`, `agent_hard/`, `experiments/oracle/`, `experiments/rule_v2/`, `experiments/mpc/`, `experiments/hard/`.
 State on 2026-11-14 (details: `docs/SOLUTION.md`): items 1 and 3 are **done** and on `main`; item 2 was skipped because the MPC already equals the bound.
 1. DONE — perfect-foresight LP bound (`experiments/oracle/oracle_lp.py`): 5.675 on the train year as one run, 6.11 mean per week.
 2. SKIPPED — rule-based v2.
 3. DONE — exact 24 h MPC in `agent/agent.py` (dynamic programme on the marginal value of stored energy, numpy only, no load/solar forecast): 5.667 on the train year = 99.85 % of the bound, 0 infractions, 1-6 ms/step.
-4. TO DO — run submissions (announce first, log in `SUBMISSIONS.md`); merge to `main` only a verified better agent. The model is at the physical optimum, so do not expect further gains: submit early (ties are broken by submission time).
+4. DONE — **Hard Mode agent** (`agent_hard/agent.py` + `agent_hard/model.json`): 48→24 h stochastic MPC on net-load scenarios, profile+ridge forecasts of price/CO2/load/solar. Hold-out (last 7 train days of each month, model fitted without them) **20.32 vs bound 22.40 (90.7 %)**; planner alone 99.6 % of bound; `submission_hard.zip` passes the official checker, ~8 ms/step. See `docs/HARD_MODE_HANDOFF.md` and `docs/SOLUTION.md` §8.
+5. TO DO — Hard Mode submissions (announce first, log in `SUBMISSIONS.md`); standard-mode submissions if not yet done.
 
 ### Branch `aiman` — MODEL track: forecasting + data analysis
-Note 2026-11-14: the agent on `main` does not use load/solar forecasts — on this campus they cannot change the decisions (`docs/SOLUTION.md` §2). Check with Natan before spending time on items 2-3; the EDA (item 1) is still needed for the demo.
+Note 2026-11-14: in **standard mode** the agent on `main` does not use load/solar forecasts — on this campus they cannot change the decisions (`docs/SOLUTION.md` §2). **In Hard Mode this does NOT hold**: the price/CO2 window is only 3 h, net load goes negative ~9 % of the time (12x solar), so forecast quality is worth real points — `agent_hard/` forecasts load and solar with profile+ridge models, and better ones (LightGBM residuals) are welcome. Coordinate with Natan before adding forecasters to the *standard* agent; the EDA (item 1) is still needed for the demo.
 Owner of `notebooks/`, `experiments/forecast/`, `agent/models/`.
 1. EDA notebook: load and solar by hour/weekday/month, train-vs-last-week-of-month drift, price/CO2 patterns, solar vs irradiance. Share key findings in `docs/HANDOFF.md` (Sami uses them for the demo).
 2. Forecasters for next-24 h load and solar using ONLY what the agent sees (`hour`, `day_of_week`, month, `noves_dades_5min`, `self.historial`): seasonal-naive -> ridge -> LightGBM. Validate by whole-week CV (MAE by horizon).

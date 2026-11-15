@@ -1,0 +1,28 @@
+{
+ "arch": "rnn",
+ "tag": "e",
+ "mode": "full",
+ "cfg": {
+  "lr": 0.0003,
+  "wd": 0.05,
+  "batch": 128,
+  "max_epochs": 40,
+  "patience": 6,
+  "last": 48,
+  "emb": 16,
+  "mlp": 48,
+  "cell": "gru",
+  "dec": "head",
+  "hidden": 24,
+  "drop": 0.3
+ },
+ "seeds": 3,
+ "epochs": [
+  20,
+  39,
+  24
+ ],
+ "val_loss": [],
+ "train_s": 2280.2,
+ "parity_max_abs": 8.344650268554688e-07
+}

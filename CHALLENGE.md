@@ -151,6 +151,30 @@ Re-scraped all 5 tabs (Bases, Dades, Lliurament, Leaderboard, FAQ) with every ex
 Not extractable as text: the interactive data inspector and sensor dictionary (canvas tables, "20 variables"); their content is in `docs/official/GUIA_VARIABLES.md`.
 Other page details: the leaderboard tab offers a CSV backup download of the public ranking; the page also has dark/light mode only (no rules).
 
+## HARD MODE ("Mode Difícil", site tab, read 2026-11-14 ~17:10; details: `docs/HARD_MODE_HANDOFF.md`)
+
+Same challenge and scoring, different scenario; **its own leaderboard and its own submission quota** (10/shift, separate from standard):
+
+| | Standard | Hard |
+|---|---|---|
+| Battery | 2,000 kWh, ±500 kW | **6,000 kWh, ±1,500 kW** (η same, SOC0 50 %) |
+| Solar | as measured (peak 144 kW) | **× 12** (`pv_kw * 12`, peak ≈ 1,730 kW; midday surplus up to ~1,000 kW, export worth 0) |
+| Market visibility | price/CO2 of the next 24 h | **only 3 h** (current + next 2) in `preus_properes_24h` / `co2_properes_24h` |
+| Telemetry | load + solar of hour t−1 | + `irradiancia_wm2`, `temp_ambient_c`, `temp_panel_c`, `vent_ms`; `ultima_solar_kw` already ×12 |
+| obs extras | — | `"cap_max_kwh": 6000.0`, `"power_max_kw": 1500.0` |
+| Public leaderboard | 2,016 h | **1,008 h** |
+
+The organisers' reference environment setup:
+
+```python
+df_hard = df_campus_hourly.copy(); df_hard["pv_kw"] *= 12.0
+spec_hard = {"capacity_kwh": 6000.0, "power_kw": 1500.0, "efficiency": 0.90, "soc_init": 0.50,
+             "soc_min": 0.0, "soc_max": 1.0, "dt_hours": 1.0, "forecast_horizon": 3}
+env_hard = CampusBatteryEnv(df_hard, spec=spec_hard)
+```
+
+Everything else (clamp formula, AST scanner, 60 s / 25 MB limits, `agent.py` at ZIP root, scoring) is unchanged. Locally: `sim.simulator.HARD` + `load_campus_hourly(hard=True)`, agent in `agent_hard/` (model params in `agent_hard/model.json`, fitted by `experiments/hard/build_model.py`), zip via `python -m sim.check --hard --zip` → `submission_hard.zip`.
+
 ### DO NOT go out of bounds (checklist for every agent)
 
 1. **Scoring/physics:** never request beyond ±500 kW or beyond the SOC room; always return through the clamp; return a finite float (no NaN/None/arrays).
