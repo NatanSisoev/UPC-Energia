@@ -14,11 +14,11 @@ export const BUDGET_EMAIL = '';
 /** Coverage of the usable roof assumed for the "roof potential" figure (same as the "max" solar preset). */
 const MAX_COVERAGE = 0.6;
 
-function mailto(subject: string, lines: string[]): string {
+export function mailto(subject: string, lines: string[]): string {
   return `mailto:${BUDGET_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`;
 }
 
-function campusContext(): string[] {
+export function campusContext(): string[] {
   const d = derived.current;
   if (!d) return [];
   const peak = Math.max(...d.actual.load);

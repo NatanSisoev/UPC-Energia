@@ -1,4 +1,5 @@
-import { Bell, MessageSquare, Play, Settings as SettingsIco } from 'lucide-react';
+import { Link } from 'react-router';
+import { Bell, MessageSquare, Play, Store, Settings as SettingsIco } from 'lucide-react';
 import { useLive } from '../live/useLive';
 import { useSim } from '../store/useSim';
 import { fmtKw } from '../lib/format';
@@ -46,6 +47,9 @@ export default function Header({ onSettings, onAlarms, onChat, side }: { onSetti
         <button type="button" className="btn !py-1 !text-[12px]" onClick={() => useLive.getState().start()} title="4-minute live simulation with a battery-yard failure and an e-mail alert">
           <Play size={13} /> Live 4:00
         </button>
+        <Link to="/catalogue" className="icon-btn" aria-label="Equipment catalogue" title="Catalogue: batteries and solar panels">
+          <Store size={16} />
+        </Link>
         <button type="button" className={`icon-btn ${alarmsOpen ? 'on' : ''}`} onClick={onAlarms} aria-label={`Alarms (${open.length})`} title="Alarms">
           <Bell size={16} />
           {open.length > 0 && (

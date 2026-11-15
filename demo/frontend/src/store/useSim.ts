@@ -24,7 +24,7 @@ import type {
 import type { Network } from '../scene/network';
 import { BATTERY_MODELS } from '../data/catalogue';
 import { buildLoadShares, buildingSolarKw, PV_ASBUILT_KWP, asBuiltCoverage, DEFAULT_TILT, fleetSpec } from '../sim/engine';
-import { simulateWeek, type SimResult, type WeekInput } from '../sim/challenge';
+import { simulateWeek, CHALLENGE_SPEC, type SimResult, type WeekInput } from '../sim/challenge';
 import { forecastWeek, clockHour } from '../sim/forecast';
 import { THIS_YEAR, batterySoh, pvHealth, pvYear } from '../data/assets';
 import { sunAt } from '../lib/sun';
@@ -46,6 +46,8 @@ export interface Derived {
   sims: { mpc: SimResult | null; template: SimResult | null; none: SimResult };
   chosen: SimResult;
   summary: Record<'mpc' | 'template' | 'none', WeekSummary>;
+  /** grid CO2 (kg) and cost (EUR) of the week: the real as-built campus vs the chosen (simulated) configuration */
+  totals: { real: { co2Kg: number; costEur: number }; chosen: { co2Kg: number; costEur: number } };
 }
 
 export const derived: { current: Derived | null } = { current: null };
@@ -155,6 +157,13 @@ interface SimStore {
   installBattery: (modelId: string) => void;
   updateBattery: (id: string, patch: Partial<BatteryUnit>) => void;
   removeBattery: (id: string) => void;
+  /** the bottom timeline is pinned open as a grid of charts (about half the page) */
+  chartsPinned: boolean;
+  setChartsPinned: (v: boolean) => void;
+  /** charts panel opened by hovering the timeline (closes on leave unless pinned) */
+  chartsOpen: boolean;
+  /** the dwell timer is running (drives the progress hint) */
+  chartsDwell: boolean;
   setPrefs: (p: Partial<Pick<SimStore, 'theme' | 'labelMode' | 'showLegend' | 'showActual'>>) => void;
   setForecast: (p: Partial<Pick<SimStore, 'forecastOn' | 'nowMode' | 'nowH'>>) => void;
   setFaults: (p: Partial<Faults>) => void;
@@ -226,6 +235,10 @@ export const useSim = create<SimStore>((set, get) => ({
   orbiting: false,
   fcStage: 'off',
   fcReveal: 0,
+  chartsPinned: false,
+  chartsOpen: false,
+  chartsDwell: false,
+  setChartsPinned: (v) => set({ chartsPinned: v }),
   panelHover: null,
   buildingTab: 'overview',
   underground: false,
@@ -523,7 +536,14 @@ function recompute(set: Setter, get: () => SimStore): void {
   const mpc = spec ? simulateWeek(input, spec, 'mpc') : null;
   const template = spec ? simulateWeek(input, spec, 'template') : null;
   const chosen = (s.agent === 'mpc' ? mpc : s.agent === 'template' ? template : none) ?? none;
+  // the real campus for the same week: measured PV of the as-built plant, the as-built battery under the MPC agent
+  const realSim = simulateWeek({ ...input, pv: week.pv }, CHALLENGE_SPEC, 'mpc').metrics;
+  const chosenM = chosen.metrics;
   derived.current = {
+    totals: {
+      real: { co2Kg: realSim.co2Agent, costEur: realSim.costAgent },
+      chosen: { co2Kg: chosenM.co2Agent, costEur: chosenM.costAgent },
+    },
     week,
     actual,
     nowH,

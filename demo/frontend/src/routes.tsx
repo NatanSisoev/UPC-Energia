@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import App from './App';
+import CataloguePage from './components/CataloguePage';
 
 /** The focusable panels of the control room. URLs double as deep links. */
 export type PanelId = 'overview' | 'solar' | 'batteries' | 'impact' | 'dashboard' | 'insights';
@@ -30,6 +31,7 @@ export function panelFromPath(pathname: string): PanelId {
 }
 
 export const router = createBrowserRouter([
+  { path: '/catalogue', element: <CataloguePage /> },
   {
     path: '/',
     element: <App />,
