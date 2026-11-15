@@ -15,6 +15,7 @@ import { useDark } from './lib/theme';
 import { closeCharts, panelHover } from './lib/chartsHover';
 import { LiveHud, LiveRunner } from './live/LiveOverlay';
 import { ManualFaultAlert } from './live/ManualFaultAlert';
+import { openFaultPanel, useFaultAlerts } from './live/faultAlertStore';
 
 export type Side = 'chat' | 'alarms' | 'building' | 'fault' | null;
 
@@ -51,6 +52,13 @@ export default function App() {
     else setSide((s) => (s === 'building' ? null : s));
   }, [selection]);
 
+  // every entry point (banner, alarm rows, map chip) calls openFaultPanel(); this opens the panel (never toggles).
+  // Declared after the selection effect so it wins when the call also selects an asset to centre the map.
+  const openReq = useFaultAlerts((s) => s.openReq);
+  useEffect(() => {
+    if (openReq > 0) setSide('fault');
+  }, [openReq]);
+
   // Esc closes the dialog, then the building panel
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -77,7 +85,7 @@ export default function App() {
           <MapView dark={dark} onAlarms={() => setSide('alarms')} />
           <LiveRunner />
           <LiveHud />
-          <ManualFaultAlert onOpen={() => setSide('fault')} />
+          <ManualFaultAlert onOpen={() => openFaultPanel()} />
           {ready && (
             <div className="pointer-events-none absolute inset-x-4 bottom-4 z-10">
               <TimeBar />
@@ -106,7 +114,12 @@ export default function App() {
                 }}
               />
             )}
-            {side === 'fault' && <FaultPanel onClose={() => setSide(null)} onAlarms={() => setSide('alarms')} onConfigure={() => setSettings('faults')} />}
+            {side === 'fault' && <FaultPanel onClose={() => setSide(null)} onAlarms={() => setSide('alarms')} onConfigure={() => setSettings('faults')}
+                onAsk={(q) => {
+                  setPending(q);
+                  setSide('chat');
+                }}
+              />}
             {side === 'alarms' && <AlarmPanel onClose={() => setSide(null)} onConfigure={() => setSettings('faults')} />}
             {side === 'chat' && <Assistant onOpenAlarms={() => setSide('alarms')} onClose={() => setSide(null)} pending={pending} onPendingDone={() => setPending(null)} />}
           </SideFrame>

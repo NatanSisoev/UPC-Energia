@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { derived, useSim } from '../store/useSim';
 import { modelOf } from '../sim/engine';
+import type { Alarm } from '../lib/alarms';
 import { FAULT_PLAYBOOK, type FaultType } from '../data/faultPlaybook';
 
 /** A manually simulated fault that is currently active. */
@@ -19,10 +20,37 @@ interface FaultAlertState {
   /** user closed the banner (the panel/e-mail status stay available while faults are active) */
   dismissed: boolean;
   notified: string;
+  /** incidents built from alarms that are not manual faults (price spike, over-demand...) so the panel can still show them */
+  extra: Incident[];
+  /** incident the panel should highlight */
+  focus: string | null;
+  /** bumped on every openFaultPanel call; App opens the sidebar on change (never toggles) */
+  openReq: number;
   set: (p: Partial<FaultAlertState>) => void;
 }
 
-export const useFaultAlerts = create<FaultAlertState>((set) => ({ shown: [], dismissed: false, notified: '', set: (p) => set(p) }));
+export const useFaultAlerts = create<FaultAlertState>((set) => ({ shown: [], dismissed: false, notified: '', extra: [], focus: null, openReq: 0, set: (p) => set(p) }));
+
+/**
+ * Single entry point to open the fault panel (banner, alarm list, map chip, timeline marks).
+ * Opens (never toggles) the panel for the alarm/fault, and centres the map on its asset when it has one.
+ */
+export function openFaultPanel(alarm?: Alarm | null): void {
+  const st = useFaultAlerts.getState();
+  let focus: string | null = st.shown[0]?.key ?? null;
+  let extra = st.extra;
+  if (alarm) {
+    focus = alarm.id;
+    if (!st.shown.some((i) => i.key === alarm.id)) {
+      const type: FaultType = alarm.id.startsWith('bat-') ? 'battery' : alarm.id.startsWith('pv-') ? 'pv' : alarm.id === 'outage' ? 'outage' : alarm.target === 'substation' ? 'substation' : 'generic';
+      const inc: Incident = { key: alarm.id, title: alarm.title, line: alarm.detail, type, asset: alarm.target && alarm.target !== 'battery' && alarm.target !== 'substation' ? (useSim.getState().campus?.features.find((f) => f.properties.osmId === alarm.target)?.properties.short ?? alarm.target) : alarm.target ?? 'Campus', at: simClock() };
+      extra = [inc, ...extra.filter((i) => i.key !== inc.key)].slice(0, 8);
+    }
+    // centre the map on the affected asset (existing click-to-focus); the fault panel then wins the sidebar
+    if (alarm.target && alarm.target !== 'battery' && alarm.target !== 'substation') useSim.getState().select(alarm.target);
+  }
+  st.set({ extra, focus, openReq: st.openReq + 1 });
+}
 
 export const TECH_PHONE = (import.meta.env.VITE_TECH_PHONE as string | undefined)?.trim() ?? '';
 export const TECH_EMAIL = (import.meta.env.VITE_TECH_EMAIL as string | undefined)?.trim() ?? '';

@@ -14,8 +14,12 @@ const STATUS: Record<string, string> = {
 };
 
 /** Right-sidebar detail for the manually simulated faults: what happened, the default solution, and actions. */
-export default function FaultPanel({ onClose, onAlarms, onConfigure }: { onClose: () => void; onAlarms: () => void; onConfigure: () => void }) {
-  const shown = useFaultAlerts((s) => s.shown);
+export default function FaultPanel({ onClose, onAlarms, onConfigure, onAsk }: { onClose: () => void; onAlarms: () => void; onConfigure: () => void; onAsk: (q: string) => void }) {
+  const manual = useFaultAlerts((s) => s.shown);
+  const extra = useFaultAlerts((s) => s.extra);
+  const focus = useFaultAlerts((s) => s.focus);
+  // alarms opened from the alarm list that are not manual faults are listed too (generic playbook fallback)
+  const shown = [...manual, ...extra.filter((e) => !manual.some((m) => m.key === e.key))];
   const notified = useFaultAlerts((s) => s.notified);
   const alert = useLive((s) => s.alert);
   const alertDetail = useLive((s) => s.alertDetail);
@@ -43,7 +47,12 @@ export default function FaultPanel({ onClose, onAlarms, onConfigure }: { onClose
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3">
         {shown.length === 0 && <div className="rounded-lg border border-dashed border-[var(--border-strong)] p-4 text-center text-[12.5px] muted">No active simulated faults.</div>}
         {shown.map((i) => (
-          <div key={i.key} className="rounded-lg border border-[var(--border)] p-3" style={{ borderLeft: '3px solid var(--danger)' }}>
+          <div
+            key={i.key}
+            ref={focus === i.key ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
+            className="rounded-lg border border-[var(--border)] p-3"
+            style={{ borderLeft: '3px solid var(--danger)', ...(focus === i.key ? { boxShadow: '0 0 0 2px var(--danger-soft)' } : {}) }}
+          >
             <div className="flex items-center gap-2 text-[13.5px] font-semibold" style={{ color: 'var(--danger)' }}>
               <AlertOctagon size={15} /> {i.title}
             </div>
@@ -68,9 +77,20 @@ export default function FaultPanel({ onClose, onAlarms, onConfigure }: { onClose
                 <li key={l}>{l}</li>
               ))}
             </ul>
-            <button type="button" className="btn mt-3 !px-2 !py-0.5 !text-[11.5px]" onClick={() => clear(i)}>
-              Clear this fault
-            </button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn !px-2 !py-0.5 !text-[11.5px]"
+                onClick={() => onAsk(`Explain the active fault on ${i.asset} (${FAULT_PLAYBOOK[i.type].label}, simulated time ${i.at}): what happened, the impact, what the system is doing now and the recommended actions.`)}
+              >
+                Ask the assistant what happened
+              </button>
+              {manual.some((m) => m.key === i.key) && (
+                <button type="button" className="btn !px-2 !py-0.5 !text-[11.5px]" onClick={() => clear(i)}>
+                  Clear this fault
+                </button>
+              )}
+            </div>
           </div>
         ))}
 

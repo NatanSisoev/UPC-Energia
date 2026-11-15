@@ -61,7 +61,15 @@ export function ManualFaultAlert({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-4 z-30 flex justify-center">
       <div className="card fade-in pointer-events-auto flex items-center gap-2 px-4 py-2.5" style={{ borderColor: 'var(--danger)', background: 'var(--surface)', boxShadow: '0 0 0 3px var(--danger-soft), var(--shadow)' }}>
-        <button type="button" className="text-left" onClick={onOpen} aria-label="Open fault details">
+        <button
+          type="button"
+          className="cursor-pointer rounded-md text-left transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+          onClick={() => {
+            onOpen();
+            useFaultAlerts.getState().set({ dismissed: true }); // details are now in the sidebar: close the banner
+          }}
+          aria-label="Open fault details"
+        >
           {shown.map((i) => (
             <div key={i.key} className="text-[14px] font-semibold" style={{ color: 'var(--danger)' }}>
               {i.title} <span className="faint text-[11px] font-normal">(simulated)</span>

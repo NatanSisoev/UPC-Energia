@@ -1,5 +1,5 @@
 /** Default solution / fallback per fault type, in plain language (shown in the alert and in the e-mail). */
-export type FaultType = 'battery' | 'pv' | 'outage' | 'cable' | 'substation';
+export type FaultType = 'battery' | 'pv' | 'outage' | 'cable' | 'substation' | 'generic';
 
 export interface PlaybookEntry {
   label: string;
@@ -29,6 +29,11 @@ export const FAULT_PLAYBOOK: Record<FaultType, PlaybookEntry> = {
     happened: ["A feeder cable is damaged or tripped, cutting supply to the buildings on that line.", "Those buildings need to be rerouted or isolated until the cable is repaired."],
     label: 'Cable fault',
     solution: ['Reroute the supply through the neighbouring feeder and isolate the damaged section.', 'Non-critical loads on the faulty line stay off until repair.'],
+  },
+  generic: {
+    happened: ['The monitoring system raised an alarm for this asset or condition.', 'It does not match a known equipment fault, so check the readings before acting.'],
+    label: 'Alarm',
+    solution: ['Check the asset and its latest readings on the map and the timeline.', 'If it persists, contact the on-call technician.'],
   },
   substation: {
     happened: ["A substation is down, so the buildings it feeds lose their normal supply.", "Local battery and solar can island them while the grid side is repaired."],

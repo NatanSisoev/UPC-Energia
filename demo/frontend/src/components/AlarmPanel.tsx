@@ -3,6 +3,7 @@ import { AlertOctagon, AlertTriangle, Info, X } from 'lucide-react';
 import { useSim } from '../store/useSim';
 import { KIND_LABEL, useAlarms, type Alarm } from '../lib/alarms';
 import { hourLabel } from '../lib/assistant';
+import { openFaultPanel } from '../live/faultAlertStore';
 import { Seg } from './kit';
 
 const ICON = { critical: AlertOctagon, warning: AlertTriangle, info: Info } as const;
@@ -66,13 +67,13 @@ function AlarmRow({ a }: { a: Alarm }) {
   return (
     <button
       type="button"
-      className="flex w-full gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-left hover:border-[var(--border-strong)]"
+      className="flex w-full cursor-pointer gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-left hover:border-[var(--border-strong)] hover:bg-[var(--surface-2,var(--surface))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
       style={{ borderLeft: `3px solid ${COLOR[a.severity]}` }}
       onClick={() => {
         if (!whole) useSim.getState().setTMin(a.startH * 60 + 30);
-        if (a.target && a.target !== 'battery' && a.target !== 'substation') useSim.getState().select(a.target);
+        openFaultPanel(a); // same panel as the red banner; also centres the map on the asset
       }}
-      title={whole ? undefined : 'Jump to this moment'}
+      title={whole ? 'Open fault details' : 'Jump to this moment and open details'}
     >
       <Icon size={16} style={{ color: COLOR[a.severity] }} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
