@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Check, Loader2, Trash2, Upload, X } from 'lucide-react';
 import { useSim, type ModelInfo } from '../store/useSim';
+import { usePopupReq } from '../store/useUi';
 
 /** Header "Model" selector + upload dialog + toast. Uploads go through the local dev middleware (scripts/model-plugin.mjs). */
 export default function ModelMenu() {
@@ -13,6 +14,7 @@ export default function ModelMenu() {
   const [open, setOpen] = useState(false);
   const [dlg, setDlg] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  usePopupReq('model', setOpen);
   const cur = models.find((m) => m.id === modelId);
 
   useEffect(() => {
@@ -41,7 +43,7 @@ export default function ModelMenu() {
   if (!models.length) return null;
   return (
     <>
-      <div className="relative" ref={ref}>
+      <div className="relative" ref={ref} data-tour="model">
         <button type="button" className="btn !py-1 !text-[12px]" onClick={() => setOpen(!open)} title="Model that drives the battery (forecasts and charge / discharge decisions)">
           {loading ? <Loader2 size={13} className="animate-spin" /> : null}
           <span className="text-[var(--text-dim,inherit)] opacity-70">Model:</span> <span className="font-semibold">{cur?.name ?? '—'}</span>

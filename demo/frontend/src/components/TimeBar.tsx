@@ -5,6 +5,7 @@ import { ForecastCard } from './ForecastCard';
 import { useAlarms } from '../lib/alarms';
 import { fmtKw, weekMsAt } from '../lib/format';
 import { Seg } from './kit';
+import { useUi } from '../store/useUi';
 import { toggleCharts } from '../lib/chartsHover';
 import { SOURCE, weekMix, type Source } from '../lib/supply';
 
@@ -33,6 +34,10 @@ export default function TimeBar() {
     if (stage === 'off') setCardOpen(false);
   }, [stage]);
   const [zoom, setZoom] = useState<'week' | 'day'>('week');
+  const zoomReq = useUi((u) => u.zoomReq);
+  useEffect(() => {
+    if (zoomReq) setZoom(zoomReq.zoom);
+  }, [zoomReq]);
   /** hour under the pointer (tooltip) */
   const [hv, setHv] = useState<{ h: number; px: number } | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);

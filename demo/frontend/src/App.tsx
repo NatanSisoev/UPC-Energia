@@ -16,8 +16,9 @@ import { closeCharts } from './lib/chartsHover';
 import { LiveHud, LiveRunner } from './live/LiveOverlay';
 import { ManualFaultAlert } from './live/ManualFaultAlert';
 import { openFaultPanel, useFaultAlerts } from './live/faultAlertStore';
+import { useUi, type Side } from './store/useUi';
 
-export type Side = 'chat' | 'alarms' | 'building' | 'fault' | null;
+export type { Side };
 
 /**
  * Layout: header · map with the timeline underneath · right sidebar (assistant chat, alarm list, or the history of
@@ -59,6 +60,23 @@ export default function App() {
     if (openReq > 0) setSide('fault');
   }, [openReq]);
 
+  // requests from the guided tour (declared after the selection effect so they win)
+  const sideReq = useUi((s) => s.sideReq);
+  const settingsReq = useUi((s) => s.settingsReq);
+  const askReq = useUi((s) => s.askReq);
+  useEffect(() => {
+    if (sideReq) setSide(sideReq.side);
+  }, [sideReq]);
+  useEffect(() => {
+    if (settingsReq) setSettings(settingsReq.tab);
+  }, [settingsReq]);
+  useEffect(() => {
+    if (askReq) {
+      setPending(askReq.q);
+      setSide('chat');
+    }
+  }, [askReq]);
+
   // Esc closes the dialog, then the building panel
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -92,6 +110,7 @@ export default function App() {
               (same element either way, so the strip keeps its hover state across the change) */}
           {ready && (
             <div
+              data-tour="timeline"
               className={`z-10 flex min-h-0 shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface)] shadow-[0_-2px_10px_rgba(0,0,0,0.08)] ${pinned ? 'h-1/2' : ''}`}
             >
               <div className="shrink-0">

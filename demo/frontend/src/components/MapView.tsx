@@ -228,7 +228,12 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
       return { longitude: (x0 + x1) / 2, latitude: lat, zoom: Math.min(19.5, Math.max(15, Math.min(zx, zy))) };
     };
     function placeLabels() {
-      const vp = deck.getViewports()[0];
+      let vp: ReturnType<typeof deck.getViewports>[number] | undefined;
+      try {
+        vp = deck.getViewports()[0];
+      } catch {
+        return; // deck is not laid out yet (fresh mount, e.g. coming back from the catalogue)
+      }
       const box = labelsRef.current;
       if (!vp || !box) return;
       for (const el of Array.from(box.children) as HTMLElement[]) {

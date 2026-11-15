@@ -427,3 +427,16 @@ input[type='range'].range::-moz-range-thumb {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
+
+/* ---- guided tour ---- */
+@keyframes tour-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes tour-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tour-ring { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft), 0 0 0 2px var(--accent); } 50% { box-shadow: 0 0 0 7px var(--accent-soft), 0 0 0 2px var(--accent); } }
+.tour-card { animation: tour-in 0.28s ease both; }
+.tour-fade { animation: tour-fade 0.35s ease both; }
+.tour-spot { animation: tour-ring 1.8s ease-in-out infinite; }
+.tour-pulse { animation: tour-ring 0.9s ease-in-out 3; border-radius: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  .tour-card, .tour-fade, .tour-spot, .tour-pulse { animation: none; }
+  .tour-spot { box-shadow: 0 0 0 2px var(--accent); }
+}

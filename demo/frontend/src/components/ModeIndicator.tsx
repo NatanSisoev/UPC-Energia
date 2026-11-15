@@ -5,6 +5,7 @@ import { modelOf, installedKwp, asBuiltCoverage, DEFAULT_TILT } from '../sim/eng
 import { PANEL_MODELS } from '../data/catalogue';
 import { fmtEur } from '../lib/format';
 import { paybackYearsOf, WEEKS_PER_YEAR, LIFETIME_YEARS } from '../lib/payback';
+import { usePopupReq } from '../store/useUi';
 import { TIME_LABEL, useViewMode, type Change } from '../lib/mode';
 
 const KIND: Record<Change['kind'], { label: string; cls: string }> = {
@@ -114,6 +115,7 @@ export default function ModeIndicator() {
   const forecastOn = useSim((s) => s.forecastOn);
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  usePopupReq('scenario', setOpen);
   const t = TIME_LABEL[time];
   const delta = hour - nowH;
 
@@ -130,6 +132,7 @@ export default function ModeIndicator() {
   return (
     <div className="flex items-center gap-2">
       <div
+        data-tour="time-pill"
         className="flex items-center gap-2 rounded-md border px-2.5 py-1"
         style={{ borderColor: t.color, background: time === 'forecast' ? 'var(--accent-soft)' : time === 'live' ? 'var(--ok-soft)' : 'var(--surface-2)' }}
         title={t.hint}
@@ -152,7 +155,7 @@ export default function ModeIndicator() {
       </div>
 
       {scenario.length > 0 ? (
-        <div className="relative" ref={boxRef}>
+        <div className="relative" ref={boxRef} data-tour="sim-pill">
           <button
             type="button"
             onClick={() => setOpen(!open)}

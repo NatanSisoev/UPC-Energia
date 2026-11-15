@@ -1,5 +1,13 @@
 # Frontend handoff — state at 2026-11-14 (end of session 2)
 
+## Tour (live click-through demo)
+A slide-style walk through the LIVE app for a ~5 min demo: 9 beats ("A Monday in the life of the campus energy manager"), no timers.
+- **Keys**: `T` (or the *Tour* button in the header) start · `→` / Space / Next button advance · `←` back · `1`-`9` jump to a beat · `N` speaker notes · `Esc` exit (restores theme, layers, week, model and the real campus). Keys are ignored while typing in an input.
+- **Code**: `src/tour/steps.ts` (data: the 9 beats), `facts.ts` (live numbers for captions), `actions.ts` (absolute state helpers), `useTour.ts` (zustand: idx, sub, next/prev/goto), `TourOverlay.tsx` (card, spotlight, covers, keys; mounted in the router root in `routes.tsx` so it survives `/catalogue`). UI that lives in local React state is driven through `src/store/useUi.ts` (sidebar, Settings, assistant question, header drop-downs, timeline zoom).
+- **Add / edit a step**: add a `TourStep` to `STEPS`: `enter()` sets the starting state, `clicks[]` are micro-reveals (button label "Next: <label>", `action` = the "Now: ..." line, `spot` = CSS selector for the spotlight ring; `data-tour` attributes exist on time pill, SIMULATED pill, calendar, model menu, timeline, bell, chat). Text may be a function of `TF` (never type numbers by hand). `cover(sub)` shows a full-screen slide (`json`, `insights`, `facts`).
+- **Determinism rule**: `enter()` and `clicks` must set ABSOLUTE state (never toggle). Every Back / jump runs `resetBase()` (real campus, standard model, Monday 11:00 of week 17, 2D, nothing open) + `enter()` + the first n clicks, instantly, animating only the last; steps are independent of each other. Plain Next on a micro-click just runs that click on top.
+- The old pitch (`src/pitch/`) is not mounted by `App.tsx` any more (left untouched).
+
 ## Session 4 (Aiman, branch `aiman-demo-minimal`): monitor features on top of the redesign
 - **Wider map**: `data-raw/ground-wide-query.txt` (≈2 × 1.8 km around the campus) → `npm run build:ground` → `public/data/ground.json` (≈1 MB, with `bbox` + `water`). The 4.5 MB raw extract is git-ignored; the curl line to refetch it is in `scripts/build-ground-data.mjs`. Neighbourhood buildings are always flat; only the campus is extruded in 3D. A ground plane covers the whole extract.
 - **Cable network precomputed**: `npm run build:network` → `public/data/network.json` (routing took 1.2 s at startup).

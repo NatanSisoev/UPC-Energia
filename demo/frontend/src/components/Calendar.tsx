@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { derived, useSim } from '../store/useSim';
+import { usePopupReq } from '../store/useUi';
 
 const DAY = 86_400_000;
 const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -15,6 +16,7 @@ export default function Calendar() {
   const tMin = useSim((s) => s.tMin);
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  usePopupReq('calendar', setOpen);
 
   /** day key (UTC days since epoch, local clock stored as UTC) -> {week, first hour} */
   const days = useMemo(() => {
@@ -72,7 +74,7 @@ export default function Calendar() {
   const shift = (k: number) => month && setMonth({ y: month.y + Math.floor((month.m + k) / 12), m: (((month.m + k) % 12) + 12) % 12 });
 
   return (
-    <div className="relative" ref={boxRef}>
+    <div className="relative" ref={boxRef} data-tour="calendar">
       <button type="button" className="btn" onClick={() => setOpen(!open)} aria-expanded={open}>
         <CalendarDays size={15} />
         <span className="tnum">{short(first)} – {short(last)} {last.getUTCFullYear()}</span>

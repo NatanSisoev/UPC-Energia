@@ -1,4 +1,5 @@
-import { createBrowserRouter, Navigate } from 'react-router';
+import { createBrowserRouter, Navigate, Outlet } from 'react-router';
+import TourOverlay from './tour/TourOverlay';
 import App from './App';
 import CataloguePage from './components/CataloguePage';
 
@@ -30,7 +31,20 @@ export function panelFromPath(pathname: string): PanelId {
   }
 }
 
+/** root layout: the guided tour lives above both the map and the catalogue page */
+function Root() {
+  return (
+    <>
+      <Outlet />
+      <TourOverlay />
+    </>
+  );
+}
+
 export const router = createBrowserRouter([
+  {
+    element: <Root />,
+    children: [
   { path: '/catalogue', element: <CataloguePage /> },
   {
     path: '/',
@@ -44,5 +58,7 @@ export const router = createBrowserRouter([
       { path: 'insights', element: null },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
+  },
+  ],
   },
 ]);
