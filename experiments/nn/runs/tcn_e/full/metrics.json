@@ -1,0 +1,28 @@
+{
+ "arch": "tcn",
+ "tag": "e",
+ "mode": "full",
+ "cfg": {
+  "ch": 32,
+  "blocks": 5,
+  "dec": "conv",
+  "hid": 64,
+  "emb": 24,
+  "drop": 0.3,
+  "mean24": false,
+  "lr": 0.0003,
+  "wd": 0.05,
+  "batch": 128,
+  "max_epochs": 60,
+  "patience": 8
+ },
+ "seeds": 3,
+ "epochs": [
+  5,
+  6,
+  6
+ ],
+ "val_loss": [],
+ "train_s": 838.7,
+ "parity_max_abs": 9.5367431640625e-07
+}

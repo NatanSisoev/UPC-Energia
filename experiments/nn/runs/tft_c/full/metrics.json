@@ -1,0 +1,26 @@
+{
+ "arch": "tft",
+ "tag": "c",
+ "mode": "full",
+ "cfg": {
+  "d": 16,
+  "heads": 2,
+  "drop": 0.2,
+  "attn": false,
+  "hist_len": 48,
+  "lr": 0.0003,
+  "wd": 0.01,
+  "batch": 128,
+  "max_epochs": 60,
+  "patience": 8
+ },
+ "seeds": 3,
+ "epochs": [
+  23,
+  28,
+  14
+ ],
+ "val_loss": [],
+ "train_s": 819.3,
+ "parity_max_abs": 1.6093254089355469e-06
+}

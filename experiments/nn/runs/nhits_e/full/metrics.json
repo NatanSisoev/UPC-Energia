@@ -1,0 +1,44 @@
+{
+ "arch": "nhits",
+ "tag": "e",
+ "mode": "full",
+ "cfg": {
+  "kernels": [
+   8,
+   4,
+   1
+  ],
+  "lens": [
+   48,
+   48,
+   24
+  ],
+  "fpools": [
+   8,
+   4,
+   2
+  ],
+  "knots": [
+   3,
+   6,
+   24
+  ],
+  "pool": "avg",
+  "width": 64,
+  "drop": 0.3,
+  "lr": 0.001,
+  "wd": 0.01,
+  "batch": 128,
+  "max_epochs": 60,
+  "patience": 8
+ },
+ "seeds": 3,
+ "epochs": [
+  3,
+  4,
+  3
+ ],
+ "val_loss": [],
+ "train_s": 94.6,
+ "parity_max_abs": 9.5367431640625e-07
+}

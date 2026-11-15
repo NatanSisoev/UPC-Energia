@@ -1,4 +1,4 @@
-"""python -m sim.check agent/agent.py [--zip]
+"""python -m sim.check [agent/agent.py | agent_hard/agent.py] [--zip] [--hard]
 Pre-submission checks: forbidden imports/calls (AST), clamp safety at extreme SOC, timing, optional zip build."""
 import ast
 import sys
@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 from sim.data import synthetic_campus
-from sim.simulator import build_obs, load_agent_class, simulate
+from sim.simulator import HARD, STANDARD, build_obs, load_agent_class, simulate
 
 # Same rules as the official starter_kit/check_submission.py (AST scanner on the server).
 FORBIDDEN_MODULES = {
@@ -55,7 +55,10 @@ def ast_scan(path: Path) -> list:
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    path = Path(args[0] if args else "agent/agent.py")
+    hard = "--hard" in sys.argv
+    spec = HARD if hard else STANDARD
+    default = "agent_hard/agent.py" if hard else "agent/agent.py"
+    path = Path(args[0] if args else default)
     ok = True
 
     probs = ast_scan(path)
@@ -63,23 +66,31 @@ def main():
     ok &= not probs
 
     df = synthetic_campus(days=84)
+    if hard:
+        df["pv_kw"] *= 12.0                     # the Hard Mode campus is the same data with 12x solar
     cls = load_agent_class(str(path))
     t0 = time.time()
-    res = simulate(cls(), df)
+    res = simulate(cls(), df, spec=spec)
     est = (time.time() - t0) * 2016 / len(df)
-    print(f"Sim (synthetic): {res.summary()}  | est. time for 2016 h: {est:.1f}s (limit 60s)")
+    print(f"Sim ({'HARD' if hard else 'synthetic'}): {res.summary()}  | est. time for 2016 h: {est:.1f}s (limit 60s)")
     ok &= res.violations == 0 and est < 60
 
     agent = cls()
-    for soc in (0.0, 1e-6, 1000.0, 1999.9999, 2000.0):
-        r = float(agent.act(build_obs(df, 30, soc)))
+    cap, pmax = spec.capacity, spec.power
+    socs = (0.0, 1e-6, cap / 2.0, cap - 1e-4, cap)
+    for soc in socs:
+        obs = build_obs(df, 30, soc, spec)
+        r = float(agent.act(obs))
         print(f"  soc={soc:>10}: setpoint={r:9.3f}")
     print("RESULT:", "PASS" if ok else "FAIL")
 
     if "--zip" in sys.argv and ok:
-        out = Path("submission.zip")
+        out = Path("submission_hard.zip" if hard else "submission.zip")
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             z.write(path, "agent.py")                       # agent.py at the ROOT of the zip
+            model = path.parent / "model.json"
+            if model.exists():
+                z.write(model, "model.json")                # model.json at the ROOT too (hard agent reads it)
             for f in sorted((path.parent / "models").glob("*")):
                 z.write(f, f.name)                          # models beside agent.py (Path(__file__).parent)
         print(f"built {out} ({out.stat().st_size / 1e6:.2f} MB)")
