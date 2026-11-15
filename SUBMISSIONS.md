@@ -71,3 +71,7 @@ exactly (H9/H10/H11 re-uploads 20:39–20:52 match to the last digit), so public
 | H53 | 2 | Natan | re-upload | - | 23.54 (CO2 22.93 %, cost 24.96 %) | TeamName2 20:39. `submission_hard_09.zip` (H9) re-uploaded: score identical to H9 to the last digit -> leaderboard scoring is deterministic. |
 | H54 | 2 | Natan | re-upload | - | 23.71 (CO2 22.89 %, cost 25.63 %) | TeamName2 20:40. `submission_hard_10.zip` (H10) re-uploaded, identical score. |
 | H55 | 2 | Natan | re-upload | - | 23.67 (CO2 22.90 %, cost 25.47 %) | TeamName2 20:52. `submission_hard_11.zip` (H11) re-uploaded, identical score. |
+| H56 | 2 | Natan | nn zip | 20.466 (twin 20.464) | 23.32 (CO2 22.50 %, cost 25.23 %) | `nn/c40_nhits_e.zip`: N-HiTS tag e, blend 0.5. Worst of the four architectures; mirrors the MLP pattern (market-path nets hurt most). |
+| H57 | 2 | Natan | nn zip | 20.423 (twin 20.464, -0.04) | 23.56 (CO2 22.83 %, cost 25.25 %) | `nn/c50_rnn-e_b050.zip`: GRU tag e, blend 0.5. Best of the four, still -0.15 vs H10. |
+| H58 | 2 | Natan | nn zip | 20.477 (twin 20.464, +0.01) | 23.38 (CO2 22.62 %, cost 25.15 %) | `nn/c60_tcn-e_b050.zip`: TCN tag e, blend 0.5. |
+| H59 | 2 | Natan | nn zip | 20.484 (twin 20.464, +0.02) | 23.55 (CO2 22.73 %, cost 25.46 %) | `nn/c70_tft-c_b050.zip`: TFT-lite tag c, blend 0.5. **Group E verdict: all four lose to H10 -> Case B4 final; neural work stopped.** Local order (c70>c60>c40>c50) failed to predict the public order (c50>c70>c60>c40) again. |
