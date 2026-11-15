@@ -1,5 +1,5 @@
 import { mixAt, shares, SOURCE, type Source } from '../lib/supply';
-import { useSim } from '../store/useSim';
+import { derived, useSim } from '../store/useSim';
 import { fmtKw } from '../lib/format';
 
 const ORDER: Source[] = ['solar', 'battery', 'grid'];
@@ -7,15 +7,29 @@ const R = 40;
 const CIRC = 2 * Math.PI * R;
 
 /**
- * "Where is the power coming from right now?" as a pie (donut) chart: the share of the campus demand covered by
- * solar, the battery and the grid this hour, with the demand in the centre. Below: a plain sentence, and what the
- * battery is doing (charging / discharging / idle) with its charge level.
+ * "Where is the power from?" as a pie (donut) chart: the share of demand covered by solar, the battery and the
+ * grid this hour. Shows the whole campus by default; when a building is selected, shows that building instead.
+ * Never rendered on hover.
  */
 export default function EnergyFlow() {
+  const campus = useSim((s) => s.campus);
+  const selection = useSim((s) => s.selection);
+  const tMin = useSim((s) => s.tMin);
   const snap = useSim((s) => s.snap);
-  if (!snap) return null;
+  const d = derived.current;
+  if (!snap || !campus || !d) return null;
 
-  const mix = mixAt(snap.hour);
+  let mix = mixAt(snap.hour);
+  let name = 'Whole campus';
+  const bi = selection ? campus.features.findIndex((f) => f.properties.osmId === selection) : -1;
+  if (bi >= 0) {
+    // the building's demand is its share of the campus meter; campus solar/battery/grid are allocated to it pro rata
+    const curH = Math.min(d.week.load.length - 1, Math.floor(tMin / 60));
+    const load = d.shares[bi * 168 + curH] * d.week.load[curH];
+    const k = load / Math.max(1e-9, mix.load);
+    mix = { grid: mix.grid * k, battery: mix.battery * k, solar: mix.solar * k, load };
+    name = campus.features[bi].properties.short;
+  }
   const s = shares(mix);
 
   let acc = 0;
@@ -26,14 +40,12 @@ export default function EnergyFlow() {
   });
 
   const pct = (k: Source) => `${Math.round(s[k] * 100)}%`;
-  const batt = snap.battKw; // + charging, − discharging
-  const idle = Math.abs(batt) < 1;
 
   return (
-    <div className="card pointer-events-auto w-[280px] p-2.5" aria-label="Where the energy comes from">
-      <div className="flex items-baseline justify-between">
+    <div className="card pointer-events-auto w-[280px] p-2.5" aria-label={`Where the energy of ${name} comes from`}>
+      <div className="flex items-baseline justify-between gap-2">
         <span className="eyebrow">Where is the power from?</span>
-        <span className="tnum text-[11px] muted">demand {fmtKw(mix.load)}</span>
+        <span className="truncate text-[11px] font-medium">{name}</span>
       </div>
 
       <div className="mt-1.5 flex items-center gap-3">
@@ -49,10 +61,10 @@ export default function EnergyFlow() {
             )}
           </g>
           <text x="50" y="48" textAnchor="middle" fontSize="13" fontWeight="700" fill="currentColor" className="tnum">
-            {(mix.load / 1000).toFixed(2)}
+            {mix.load >= 1000 ? (mix.load / 1000).toFixed(2) : mix.load.toFixed(0)}
           </text>
           <text x="50" y="60" textAnchor="middle" fontSize="7.5" fill="currentColor" opacity="0.6">
-            MW demand
+            {mix.load >= 1000 ? 'MW' : 'kW'} demand
           </text>
         </svg>
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -70,22 +82,6 @@ export default function EnergyFlow() {
           ))}
         </div>
       </div>
-
-      {/* what the battery is doing */}
-      {snap.capacityKwh > 0 && (
-        <div className="mt-2 flex items-center gap-2 text-[11.5px]">
-          <span className="font-semibold" style={{ color: SOURCE.battery.color }}>
-            {idle ? '■ Battery idle' : batt > 0 ? `▲ Charging ${fmtKw(batt)}` : `▼ Discharging ${fmtKw(-batt)}`}
-          </span>
-          <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-3)]" title={`Charge level ${(snap.soc * 100).toFixed(0)}%`}>
-            <div className="h-full rounded-full" style={{ width: `${(snap.soc * 100).toFixed(1)}%`, background: SOURCE.battery.color }} />
-          </div>
-          <span className="tnum muted">{(snap.soc * 100).toFixed(0)}%</span>
-        </div>
-      )}
-      {snap.capacityKwh > 0 && batt > 1 && (
-        <div className="mt-0.5 text-[10.5px] faint">Charging power is taken from the grid and is not counted as campus supply.</div>
-      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { Plus, X } from 'lucide-react';
+import { Plus, Store, X } from 'lucide-react';
+import { Link } from 'react-router';
 import { BATTERY_MODELS, SUBSTATION_POWER_LIMIT_MW } from '../data/catalogue';
 import { derived, useSim } from '../store/useSim';
 import { batterySheet, cableRatingKw, cableSheet, gradeColor, pvSheet, substationSheet, type AssetSheet } from '../data/assets';
@@ -26,6 +27,8 @@ export default function AssetPanel({ id, onClose }: { id: string; onClose: () =>
   let sheets: AssetSheet[] = [];
   let live: Array<[string, string]> = [];
   let extra: React.ReactNode = null;
+  /** quick-add control rendered right under the installed battery list */
+  let addPanel: React.ReactNode = null;
   /** week history of the power through this equipment */
   let history: React.ReactNode = null;
   /** grid / battery / solar share of the power through a cable */
@@ -53,26 +56,39 @@ export default function AssetPanel({ id, onClose }: { id: string; onClose: () =>
     );
     // add more batteries to the yard (simulated units; the dispatcher treats the fleet as one battery)
     const totalMw = st.batteries.reduce((a, b) => a + b.power, 0);
-    extra = (
-      <section className="rounded-[10px] border border-[var(--border)] p-3">
+    addPanel = (
+      <section className="mb-4 rounded-[10px] border border-[var(--border)] p-3">
         <div className="mb-1 flex items-baseline justify-between">
-          <div className="eyebrow">Add a battery to the yard</div>
+          <div className="eyebrow">Add batteries to the yard</div>
           <span className="tnum text-[11px] muted">
             {totalMw.toFixed(1)} / {SUBSTATION_POWER_LIMIT_MW.toFixed(1)} MW connection
           </span>
         </div>
-        <div className="flex flex-col gap-1">
-          {BATTERY_MODELS.filter((m) => m.id !== 'challenge').map((m) => {
-            const over = totalMw + m.power > SUBSTATION_POWER_LIMIT_MW;
+        <ul className="mb-2 grid gap-1">
+          {BATTERY_MODELS.map((m) => {
+            const over = totalMw + m.power > SUBSTATION_POWER_LIMIT_MW + 1e-9;
             return (
-              <button key={m.id} type="button" disabled={over} onClick={() => st.installBattery(m.id)} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-[var(--surface-2)] disabled:opacity-40" title={over ? 'Exceeds the substation connection limit' : 'Add one unit to the simulated campus'}>
-                <Plus size={13} className="shrink-0 text-[var(--accent)]" />
-                <span className="min-w-0 flex-1 truncate font-medium">{m.name}</span>
-                <span className="tnum muted">{m.capacity.toFixed(2)} MWh · {m.power.toFixed(2)} MW</span>
-              </button>
+              <li key={m.id}>
+                <button
+                  type="button"
+                  disabled={over}
+                  onClick={() => st.installBattery(m.id)}
+                  title={over ? 'Exceeds the substation connection limit' : 'Add one unit to the simulated campus'}
+                  className="flex w-full items-center gap-2 rounded-md border border-[var(--border)] px-2.5 py-1.5 text-left text-[12px] hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Plus size={13} className="shrink-0" />
+                  <span className="min-w-0 flex-1 truncate font-medium">{m.name}</span>
+                  <span className="tnum muted">
+                    {m.capacity.toFixed(2)} MWh · {m.power.toFixed(2)} MW
+                  </span>
+                </button>
+              </li>
             );
           })}
-        </div>
+        </ul>
+        <Link to="/catalogue" className="text-[11.5px] muted underline">
+          <Store size={12} className="mr-1 inline" /> See all details, prices and payback
+        </Link>
       </section>
     );
   } else if (id === 'substation') {
@@ -248,6 +264,8 @@ export default function AssetPanel({ id, onClose }: { id: string; onClose: () =>
             </section>
           );
         })}
+
+        {addPanel}
 
         {mine.length > 0 && (
           <section>

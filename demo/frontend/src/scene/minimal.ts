@@ -473,7 +473,7 @@ export interface MiniFrame {
   outage: boolean;
   /** map targets with an active alarm -> colour */
   alarmTargets: Array<{ target: string; critical: boolean }>;
-  /** individual PV panels to highlight (hovered in the list, or selected) */
+  /** individual PV panels to highlight (hovered in the list; a selected panel gets no overlay) */
   panelHi: string[];
 }
 
@@ -902,7 +902,7 @@ export function buildMinimalLayers(
         new PathLayer({ id: 'pv-frame', data: frame, getPath: at, getWidth: 0.12, widthUnits: 'meters', widthMinPixels: 0.6, getColor: (f.dark ? [190, 200, 215, 200] : [226, 232, 240, 230]) as never, parameters: e3 ? undefined : FLAT, updateTriggers: { getPath: [e3], getColor: [f.dark] } } as never),
       );
     }
-    // individual panels highlighted from the sidebar (hover / selected)
+    // individual panels highlighted from the sidebar (hover)
     if (f.panelHi.length) {
       const hi = pv.filter((x) => f.panelHi.includes(panelId(M.ids[x.b], x.j)));
       const acc = ACCENT[f.dark ? 'dark' : 'light'];

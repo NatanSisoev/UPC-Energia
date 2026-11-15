@@ -8,8 +8,8 @@ import { fmtKw } from '../lib/format';
 import { buildingSheet, gradeColor, pvSheet } from '../data/assets';
 import { panelsOf } from '../scene/minimal';
 import SolarTab from './SolarTab';
-import SupplyBar, { SourceLegend } from './SupplyBar';
-import { mixAt, shares, SOURCE, weekMix, type Source } from '../lib/supply';
+import { SourceLegend } from './SupplyBar';
+import { shares, SOURCE, weekMix, type Source } from '../lib/supply';
 
 const DAY = 86_400_000;
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -172,14 +172,6 @@ export default function BuildingPanel({ id, onClose, onAsk }: { id: string; onCl
           <Kpi k="Campus share" v={`${((100 * nowKw) / Math.max(1, campusNow)).toFixed(1)}%`} />
           <Kpi k="Rank now" v={`#${rank} / ${campus.features.length}`} />
         </div>
-
-        <Block title={`Supplied ${d.nowH != null && curH > d.nowH ? '(planned)' : 'now'} by`}>
-          <SupplyBar mix={(() => {
-            const m = mixAt(curH);
-            const k = nowKw / Math.max(1e-9, m.load);
-            return { grid: m.grid * k, battery: m.battery * k, solar: m.solar * k, load: nowKw };
-          })()} />
-        </Block>
 
         <Block title="Demand this week" right={<SourceLegend />}>
           <WeekChart s={series.shown} actual={series.actual} nowH={d.nowH} curH={curH} ms={d.week.ms} showActual={useSim.getState().showActual} />

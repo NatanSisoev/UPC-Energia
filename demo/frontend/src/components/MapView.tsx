@@ -7,8 +7,6 @@ const derivedRef = () => derived.current;
 import { buildMinimal, buildMinimalLayers, cableFlow, dayLevel, heatColor, heatOf, HEAT_CSS, parsePanelId, weekPeakKw, type MiniWorld } from '../scene/minimal';
 import { activeAt, useAlarms } from '../lib/alarms';
 import { computeMode, useViewMode } from '../lib/mode';
-import { mixAt } from '../lib/supply';
-import SupplyBar from './SupplyBar';
 import EnergyFlow from './EnergyFlow';
 import { toLonLat } from '../scene/geo';
 import { along } from '../scene/network';
@@ -295,7 +293,7 @@ export default function MapView({ dark, onAlarms }: { dark: boolean; onAlarms: (
             simRoofs: m.simRoofs,
             outage: !!s && !!st.faults.outage && s.hour >= st.faults.outage.startH && s.hour < st.faults.outage.startH + st.faults.outage.hours,
             alarmTargets: active.map((a) => ({ target: a.target!, critical: a.severity === 'critical' })),
-            panelHi: [st.panelHover?.id, st.panelFocus].filter((x): x is string => !!x),
+            panelHi: [st.panelHover?.id].filter((x): x is string => !!x),
           },
           (id) => {
             if (id !== hoverId) {
@@ -549,17 +547,6 @@ export default function MapView({ dark, onAlarms }: { dark: boolean; onAlarms: (
           <Kv k="Share" v={`${((100 * (pt?.loadKw ?? 0)) / Math.max(1, snap.loadKw)).toFixed(1)}%`} />
           <Kv k="Solar" v={fmtKw(pt?.solarKw ?? 0)} />
         </div>
-        <div className="mt-2.5 eyebrow !text-[9px]">Supplied by</div>
-        <div className="mt-1 w-[250px]">
-          <SupplyBar
-            h={6}
-            mix={(() => {
-              const m = mixAt(snap.hour);
-              const k = (pt?.loadKw ?? 0) / Math.max(1e-9, m.load);
-              return { grid: m.grid * k, battery: m.battery * k, solar: m.solar * k, load: pt?.loadKw ?? 0 };
-            })()}
-          />
-        </div>
         <div className="mt-1.5 text-[11px] faint">Click for its history</div>
       </>
     );
@@ -692,7 +679,7 @@ export default function MapView({ dark, onAlarms }: { dark: boolean; onAlarms: (
             </div>
           )}
 
-          {/* bottom-right: live energy flow (solar / battery / grid → campus) */}
+          {/* bottom-right: where the power comes from (campus, or the selected building) */}
           <div className="pointer-events-none absolute bottom-[112px] right-4 z-10">
             <EnergyFlow />
           </div>
