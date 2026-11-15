@@ -684,16 +684,18 @@ export default function MapView({ dark }: { dark: boolean; onAlarms?: () => void
                 <span className="tnum">{snap.tempC.toFixed(0)}°C</span>
                 {sunLock != null && <span className="badge badge-info">frozen</span>}
               </div>
-              <div className="card fade-in absolute right-0 top-[calc(100%+6px)] hidden items-center gap-4 px-3 py-2 text-[12px] group-hover:flex">
-              <SunDial elev={snap.sunElev} az={snap.sunAz} />
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 whitespace-nowrap">
-                <span className="faint">Sun</span>
-                <span className="tnum">{snap.sunElev > 0 ? `${snap.sunElev.toFixed(0)}° · ${snap.sunAz.toFixed(0)}°` : 'below horizon'}{sunLock != null && <span className="badge badge-info ml-1">frozen</span>}</span>
-                <span className="faint">Weather</span>
-                <span className="tnum">{snap.tempC.toFixed(0)}°C · {snap.sunElev > 4 ? `${Math.round(snap.cloud * 100)}% cloud` : 'night'}</span>
-                <span className="faint">Irradiance</span>
-                <span className="tnum">{Math.round(snap.irr)} W/m²</span>
-              </div>
+              {/* w-max: the card is absolutely positioned inside the tiny chip, so without it the
+                  shrink-to-fit width collapses to the chip width and the values spill out */}
+              <div className="card fade-in absolute right-0 top-[calc(100%+6px)] hidden w-max max-w-[calc(100vw-2rem)] items-center gap-3 px-3.5 py-2.5 text-[12px] group-hover:flex">
+                <SunDial elev={snap.sunElev} az={snap.sunAz} />
+                <div className="grid grid-cols-[auto_auto] gap-x-5 gap-y-1 whitespace-nowrap">
+                  <span className="faint">Sun</span>
+                  <span className="text-right">{snap.sunElev > 0 ? <span className="tnum">{snap.sunElev.toFixed(0)}° · {snap.sunAz.toFixed(0)}°</span> : 'below horizon'}{sunLock != null && <span className="badge badge-info ml-1">frozen</span>}</span>
+                  <span className="faint">Weather</span>
+                  <span className="text-right"><span className="tnum">{snap.tempC.toFixed(0)}°C</span> · {snap.sunElev > 4 ? <><span className="tnum">{Math.round(snap.cloud * 100)}%</span> cloud</> : 'night'}</span>
+                  <span className="faint">Irradiance</span>
+                  <span className="tnum text-right">{Math.round(snap.irr)} W/m²</span>
+                </div>
               </div>
             </div>
           )}
