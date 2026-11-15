@@ -133,9 +133,9 @@ def test_full_hard_run_zero_violations(params, hard_df):
 def test_model_json_schema():
     assert MODEL_JSON.exists(), "model.json missing -- build it with python -m experiments.hard.build_model"
     m = json.loads(MODEL_JSON.read_text(encoding="utf-8"))
-    for k in ("price_prof", "co2_prof", "load_prof"):
+    for k, ndaytype in (("price_prof", 3), ("co2_prof", 3), ("load_prof", 4)):   # load also splits closure days
         a = np.asarray(m[k], dtype=float)
-        assert a.shape == (12, 3, 24) and np.isfinite(a).all()
+        assert a.shape == (12, ndaytype, 24) and np.isfinite(a).all()
     assert np.asarray(m["sun"]).shape == (3,)
     assert np.asarray(m["kbar"]).shape == (12,)
     err = np.asarray(m["err"], dtype=float)
