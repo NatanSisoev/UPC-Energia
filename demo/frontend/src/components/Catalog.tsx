@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Mail, X } from 'lucide-react';
+import { Mail, Plus } from 'lucide-react';
 import { BATTERY_MODELS, PANEL_MODELS } from '../data/catalogue';
 import { derived, useSim } from '../store/useSim';
 import { roofKwp } from '../sim/engine';
+import { Seg } from './kit';
 
 /**
  * Where "Ask budget" emails go. Left empty on purpose: the mail client opens with subject and body filled in and
@@ -10,7 +11,7 @@ import { roofKwp } from '../sim/engine';
  */
 export const BUDGET_EMAIL = '';
 
-/** Coverage of the usable roof assumed for the "roof potential" figure (same as the old "max" solar preset). */
+/** Coverage of the usable roof assumed for the "roof potential" figure (same as the "max" solar preset). */
 const MAX_COVERAGE = 0.6;
 
 function mailto(subject: string, lines: string[]): string {
@@ -20,61 +21,50 @@ function mailto(subject: string, lines: string[]): string {
 function campusContext(): string[] {
   const d = derived.current;
   if (!d) return [];
-  const peak = Math.max(...d.week.load);
-  const avg = d.week.load.reduce((a, b) => a + b, 0) / d.week.load.length;
-  return [
-    'Site: UPC Campus Nord, Barcelona.',
-    `Reference week demand: average ${(avg / 1000).toFixed(2)} MW, peak ${(peak / 1000).toFixed(2)} MW.`,
-    'Existing PV plant: about 160 kWp.',
-  ];
+  const peak = Math.max(...d.actual.load);
+  const avg = d.actual.load.reduce((a, b) => a + b, 0) / d.actual.load.length;
+  return ['Site: UPC Campus Nord, Barcelona.', `Reference week demand: average ${(avg / 1000).toFixed(2)} MW, peak ${(peak / 1000).toFixed(2)} MW.`, 'Existing PV plant: about 160 kWp.'];
 }
 
-/** Solar & storage catalog: equipment cards with a one-click budget request (opens an email). */
-export default function Catalog({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<'solar' | 'battery'>('solar');
+/** Equipment catalog: solar panels and batteries, each with "Ask budget" (pre-filled email) and "Simulate" (add to the model). */
+export default function Catalog() {
+  const [tab, setTab] = useState<'solar' | 'battery'>('battery');
   const campus = useSim((s) => s.campus);
+  const panelModel = useSim((s) => s.panelModel);
   const roofs = useMemo(() => (campus ? campus.features.map((f) => f.properties).filter((p) => p.pv_fraction > 0) : []), [campus]);
+  const st = useSim.getState();
 
   return (
-    <div className="absolute inset-0 z-30 flex justify-end bg-black/20" onClick={onClose}>
-      <div className="flex h-full w-[460px] max-w-full flex-col bg-white shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Solar and storage catalog">
-        <div className="flex items-start justify-between border-b border-[#e3e6ea] px-6 py-5">
-          <div>
-            <div className="eyebrow">Catalog</div>
-            <h2 className="mt-1 text-[20px] font-semibold text-[#1d1d1b]">Solar &amp; storage</h2>
-            <p className="mt-1 text-[13px] text-[#5f6368]">Equipment that fits Campus Nord. Ask for a budget and we prepare the request for you.</p>
-          </div>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="flex gap-6 border-b border-[#e3e6ea] px-6">
-          {(
-            [
-              ['solar', 'Solar panels'],
-              ['battery', 'Batteries'],
-            ] as const
-          ).map(([k, l]) => (
-            <button key={k} type="button" onClick={() => setTab(k)} className={`-mb-px border-b-2 py-3 text-[14px] ${tab === k ? 'border-[#007bc0] font-semibold text-[#007bc0]' : 'border-transparent text-[#5f6368] hover:text-[#1d1d1b]'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 py-5">
-          {tab === 'solar' &&
-            PANEL_MODELS.map((m) => {
-              const kwp = roofs.reduce((a, p) => a + roofKwp(p, m.id), 0) * MAX_COVERAGE;
-              return (
-                <article key={m.id} className="rounded-lg border border-[#e3e6ea] p-4">
-                  <h3 className="text-[15px] font-semibold text-[#1d1d1b]">{m.name}</h3>
-                  <dl className="mt-3 grid grid-cols-3 gap-3 text-[12px]">
-                    <Spec k="Efficiency" v={`${m.efficiency}%`} />
-                    <Spec k="Power density" v={`${(m.kwm2 * 1000).toFixed(0)} W/m²`} />
-                    <Spec k="Roof potential" v={`${kwp.toFixed(0)} kWp`} />
-                  </dl>
-                  <BudgetButton
+    <div>
+      <div className="mb-3">
+        <Seg
+          label="Catalog"
+          value={tab}
+          onChange={setTab}
+          options={[
+            ['battery', 'Batteries'],
+            ['solar', 'Solar panels'],
+          ]}
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {tab === 'solar' &&
+          PANEL_MODELS.map((m) => {
+            const kwp = roofs.reduce((a, p) => a + roofKwp(p, m.id), 0) * MAX_COVERAGE;
+            return (
+              <article key={m.id} className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-4">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h4 className="text-[14px] font-semibold">{m.name}</h4>
+                  {panelModel === m.id && <span className="badge badge-ok">in model</span>}
+                </div>
+                <dl className="mt-3 grid grid-cols-3 gap-3 text-[12px]">
+                  <Spec k="Efficiency" v={`${m.efficiency}%`} />
+                  <Spec k="Density" v={`${(m.kwm2 * 1000).toFixed(0)} W/m²`} />
+                  <Spec k="Roof potential" v={`${kwp.toFixed(0)} kWp`} />
+                </dl>
+                <div className="mt-4 flex gap-2">
+                  <a
+                    className="btn-primary"
                     href={mailto(`Budget request: ${m.name} solar panels — UPC Campus Nord`, [
                       'Hello,',
                       '',
@@ -86,25 +76,33 @@ export default function Catalog({ onClose }: { onClose: () => void }) {
                       '',
                       'Thank you.',
                     ])}
-                  />
-                </article>
-              );
-            })}
-          {tab === 'battery' &&
-            BATTERY_MODELS.map((m) => (
-              <article key={m.id} className="rounded-lg border border-[#e3e6ea] p-4">
-                <div className="flex items-baseline justify-between gap-3">
-                  <h3 className="text-[15px] font-semibold text-[#1d1d1b]">{m.name}</h3>
-                  <span className="text-[12px] text-[#5f6368]">{m.vendor}</span>
+                  >
+                    <Mail size={14} /> Ask budget
+                  </a>
+                  <button type="button" className="btn" onClick={() => st.setPanelModel(m.id)}>
+                    Use in model
+                  </button>
                 </div>
-                <p className="mt-1 text-[13px] text-[#5f6368]">{m.note}</p>
-                <dl className="mt-3 grid grid-cols-4 gap-3 text-[12px]">
-                  <Spec k="Energy" v={`${m.capacity.toFixed(2)} MWh`} />
-                  <Spec k="Power" v={`${m.power.toFixed(2)} MW`} />
-                  <Spec k="Round trip" v={`${m.rte}%`} />
-                  <Spec k="Cycles" v={m.cycles.toLocaleString('en')} />
-                </dl>
-                <BudgetButton
+              </article>
+            );
+          })}
+        {tab === 'battery' &&
+          BATTERY_MODELS.map((m) => (
+            <article key={m.id} className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="flex items-baseline justify-between gap-2">
+                <h4 className="text-[14px] font-semibold">{m.name}</h4>
+                <span className="text-[11.5px] muted">{m.vendor}</span>
+              </div>
+              <p className="mt-1 text-[12px] muted">{m.note}</p>
+              <dl className="mt-3 grid grid-cols-4 gap-2 text-[12px]">
+                <Spec k="Energy" v={`${m.capacity.toFixed(2)} MWh`} />
+                <Spec k="Power" v={`${m.power.toFixed(2)} MW`} />
+                <Spec k="RTE" v={`${m.rte}%`} />
+                <Spec k="Cycles" v={m.cycles.toLocaleString('en')} />
+              </dl>
+              <div className="mt-4 flex gap-2">
+                <a
+                  className="btn-primary"
                   href={mailto(`Budget request: ${m.name} battery (${m.vendor}) — UPC Campus Nord`, [
                     'Hello,',
                     '',
@@ -115,12 +113,17 @@ export default function Catalog({ onClose }: { onClose: () => void }) {
                     '',
                     'Thank you.',
                   ])}
-                />
-              </article>
-            ))}
-          <p className="text-[11px] text-[#80868b]">Specifications are indicative, rounded from public vendor data. Final sizing and prices come with the supplier's budget.</p>
-        </div>
+                >
+                  <Mail size={14} /> Ask budget
+                </a>
+                <button type="button" className="btn" onClick={() => st.installBattery(m.id)} title="Add one unit to the simulated campus">
+                  <Plus size={14} /> Simulate
+                </button>
+              </div>
+            </article>
+          ))}
       </div>
+      <p className="mt-3 text-[11.5px] faint">Specifications are indicative, rounded from public vendor data. Final sizing and prices come with the supplier's budget.</p>
     </div>
   );
 }
@@ -128,16 +131,8 @@ export default function Catalog({ onClose }: { onClose: () => void }) {
 function Spec({ k, v }: { k: string; v: string }) {
   return (
     <div>
-      <dt className="text-[#80868b]">{k}</dt>
-      <dd className="tnum mt-0.5 font-semibold text-[#1d1d1b]">{v}</dd>
+      <dt className="text-[10.5px] faint">{k}</dt>
+      <dd className="tnum mt-0.5 font-medium">{v}</dd>
     </div>
-  );
-}
-
-function BudgetButton({ href }: { href: string }) {
-  return (
-    <a href={href} className="btn-primary mt-4">
-      <Mail size={15} /> Ask budget
-    </a>
   );
 }

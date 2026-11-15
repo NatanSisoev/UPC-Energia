@@ -4,19 +4,27 @@
  *   roads   : [{c: class, w: width_m, p: [[lon,lat],...]}]
  *   greens  : [{k: 'grass'|'wood'|'garden'|'pitch'|'park'|'parking', p: ring}]
  *   context : neighbouring (non-campus) buildings [{p: ring, h: height_m}]
+ *   water   : [{p: ring}]
+ *   bbox    : [minLon, minLat, maxLon, maxLat] of the covered area
+ * If data-raw/ground-wide-overpass.json exists the map covers that wider neighbourhood (roads, parks and buildings),
+ * otherwise only the campus bbox. Refetch it with (query in data-raw/ground-wide-query.txt):
+ *   curl --data-urlencode "data@data-raw/ground-wide-query.txt" https://overpass-api.de/api/interpreter -o data-raw/ground-wide-overpass.json
  * Data (c) OpenStreetMap contributors, ODbL.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (f) => JSON.parse(readFileSync(join(HERE, '..', f), 'utf8'));
-const ground = read('data-raw/ground-overpass.json');
-const raw = read('data-raw/campus-overpass.json');
+const WIDE = existsSync(join(HERE, '..', 'data-raw/ground-wide-overpass.json'));
+const ground = read(WIDE ? 'data-raw/ground-wide-overpass.json' : 'data-raw/ground-overpass.json');
+const raw = WIDE ? ground : read('data-raw/campus-overpass.json');
 const campus = read('public/data/campus.json');
 
-const [X0, Y0, X1, Y1] = campus.bbox;
+// covered area: the wide query's bbox (south,west,north,east) or the campus bbox
+const q = WIDE ? readFileSync(join(HERE, '..', 'data-raw/ground-wide-query.txt'), 'utf8').match(/\(([\d.]+),([\d.]+),([\d.]+),([\d.]+)\)/) : null;
+const [X0, Y0, X1, Y1] = q ? [+q[2], +q[1], +q[4], +q[3]] : campus.bbox;
 
 /** Clip a polyline to the bbox (Liang-Barsky per segment) -> list of polylines. */
 function clipLine(pts) {
@@ -69,9 +77,16 @@ const ring = (g) => g.map((q) => [r6(q.lon), r6(q.lat)]);
 const WIDTH = { primary: 13, primary_link: 7, tertiary: 9, secondary: 11, residential: 7, unclassified: 6, living_street: 6, service: 4.5, pedestrian: 5, footway: 2.4, cycleway: 2.6, path: 1.8, steps: 2 };
 const roads = [];
 const greens = [];
+const water = [];
 for (const e of ground.elements) {
   if (!e.geometry || e.geometry.length < 2) continue;
   const t = e.tags ?? {};
+  if (t.building) continue; // buildings are handled below (context)
+  if (t.natural === 'water') {
+    const cp = e.geometry.length >= 4 ? clipRing(ring(e.geometry)) : null;
+    if (cp) water.push({ p: cp });
+    continue;
+  }
   if (t.highway) {
     if (!(t.highway in WIDTH) || t.tunnel === 'yes' || t.layer < 0) continue;
     for (const seg of clipLine(ring(e.geometry))) roads.push({ c: t.highway, w: WIDTH[t.highway], p: seg });
@@ -105,5 +120,5 @@ for (const e of raw.elements) {
   const lv = parseFloat(e.tags['building:levels'] ?? '');
   context.push({ p, h: Number.isFinite(lv) ? lv * 3.2 + 1 : 11 + ((Math.abs(Math.round(c[0] * 1e5)) % 7) * 1.5) });
 }
-writeFileSync(join(HERE, '..', 'public', 'data', 'ground.json'), JSON.stringify({ roads, greens, context }));
-console.log({ roads: roads.length, greens: greens.length, context: context.length });
+writeFileSync(join(HERE, '..', 'public', 'data', 'ground.json'), JSON.stringify({ bbox: [X0, Y0, X1, Y1], roads, greens, water, context }));
+console.log({ wide: WIDE, roads: roads.length, greens: greens.length, water: water.length, context: context.length });

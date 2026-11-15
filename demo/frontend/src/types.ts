@@ -49,6 +49,9 @@ export interface GroundData {
   roads: Array<{ c: string; w: number; p: [number, number][] }>;
   greens: Array<{ k: string; p: [number, number][] }>;
   context: Array<{ p: [number, number][]; h: number }>;
+  /** covered area (wider than the campus when built from the wide OSM extract) */
+  bbox?: [number, number, number, number];
+  water?: Array<{ p: [number, number][] }>;
 }
 
 export interface ReplayWeek {
@@ -82,6 +85,10 @@ export interface BatteryUnit {
   capacity: number;
   /** MW */
   power: number;
+  /** commissioning year (drives the ageing / state of health) */
+  year?: number;
+  /** part of the real campus (not added in a simulation) */
+  asBuilt?: boolean;
 }
 
 export type { AgentKind, Reason };
@@ -95,6 +102,8 @@ export interface BuildingPoint {
 export interface Snapshot {
   tMin: number;
   hour: number;
+  /** true when this hour is after "now" (values are forecast, not measured) */
+  forecast: boolean;
   loadKw: number;
   solarKw: number;
   /** import (+) / export (-) AFTER the battery */
@@ -153,4 +162,4 @@ export interface ChartRow {
   co2: number;
 }
 
-export type LayerId = 'heat' | 'people' | 'weather' | 'solar' | 'cables' | 'trees' | 'shadows' | 'labels';
+export type LayerId = 'heat' | 'glow' | 'sun' | 'assets' | 'people' | 'weather' | 'solar' | 'cables' | 'trees' | 'shadows' | 'labels';

@@ -6,6 +6,8 @@
  */
 import { derived, useSim } from '../store/useSim';
 import { fmtKw } from './format';
+import { computeAlarms } from './alarms';
+import { roofKwp, installedKwp, PV_ASBUILT_KWP } from '../sim/engine';
 
 const DOW_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -94,7 +96,12 @@ export function suggestion(): Suggestion | null {
       break;
     }
   }
-  if (snap.capacityKwh <= 0) return { kind: 'none', title: 'No battery installed', kw: 0, why: 'Add storage from the catalog to get recommendations.', next: null, soc: 0, capacityKwh: 0 };
+  if (snap.capacityKwh <= 0) {
+    const broken = useSim.getState().batteries.length > 0;
+    return broken
+      ? { kind: 'none', title: 'Battery out of service', kw: 0, why: 'All storage units are marked broken. Repair them (Settings → Faults & alarms) or add storage to get recommendations.', next: null, soc: 0, capacityKwh: 0 }
+      : { kind: 'none', title: 'No battery installed', kw: 0, why: 'Add storage from Settings → Equipment & budget to get recommendations.', next: null, soc: 0, capacityKwh: 0 };
+  }
   let why: string;
   if (now === 'charge') why = `This hour is cleaner and cheaper than ${Math.round((1 - r.rank) * 100)}% of the next 24 h (price ${pct(r.priceVsMean)}, CO₂ ${pct(r.co2VsMean)} vs. average). Store energy now.`;
   else if (now === 'discharge') why = `This hour is dirtier and pricier than ${Math.round(r.rank * 100)}% of the next 24 h (price ${pct(r.priceVsMean)}, CO₂ ${pct(r.co2VsMean)} vs. average). Use stored energy.`;
@@ -173,8 +180,9 @@ function atHour(h: number): string {
   const d = derived.current!;
   const sp = d.chosen.sp[h];
   const act = sp > 5 ? `charging at ${fmtKw(sp)}` : sp < -5 ? `discharging ${fmtKw(-sp)}` : 'idle';
+  const fc = d.nowH != null && h >= d.nowH;
   return (
-    `**${hourLabel(h)}** — campus demand **${fmtKw(d.week.load[h])}**, solar ${fmtKw(d.pvTot[h])}, ` +
+    `**${hourLabel(h)}**${fc ? ' (forecast)' : ''} — campus demand **${fmtKw(d.week.load[h])}**, solar ${fmtKw(d.pvTot[h])}, ` +
     `grid price **${d.week.price[h].toFixed(3)} €/kWh**, CO₂ ${d.week.co2[h].toFixed(3)} kg/kWh. The battery is ${act}.`
   );
 }
@@ -307,6 +315,17 @@ function peakAnswer(): string {
   return `Today's demand peak: **${fmtKw(d.week.load[dp])}** at ${clock(dp)}. Week peak: **${fmtKw(d.week.load[pk])}** on ${hourLabel(pk)}.`;
 }
 
+function alarmsAnswer(): string {
+  const { h } = ctx()!;
+  const all = computeAlarms();
+  const now = all.filter((a) => a.startH <= h && h < a.endH);
+  const next = all.filter((a) => a.startH > h).slice(0, 3);
+  if (!all.length) return 'No alarms this week with the current thresholds. Faults, outages and thresholds can be set in **Settings → Faults & alarms**.';
+  let out = now.length ? `**${now.length} active** at ${hourLabel(h)}: ${now.map((a) => `${a.title} (${a.severity})`).join('; ')}.` : `Nothing active at ${hourLabel(h)}.`;
+  if (next.length) out += ` Coming up: ${next.map((a) => `${a.title} at ${hourLabel(a.startH)}${a.predicted ? ' (predicted)' : ''}`).join('; ')}.`;
+  return out + ' Open the bell in the header for the full list.';
+}
+
 export const HELP =
   'I can answer questions about the campus at the time selected on the timeline, for example: what to do with the battery, prices and CO₂ in the next 24 h, solar output, ' +
   'which buildings use most, a specific building ("how much does C4 use?"), yesterday vs today, savings, or jump in time ("show Friday at 9").';
@@ -318,6 +337,9 @@ export function ask(raw: string): Answer {
   const q = norm(raw);
 
   if (has(q, 'help', 'ayuda', 'ajuda', 'what can', 'que puedes', 'que pots')) return { text: HELP };
+  if (has(q, 'alarm', 'alert', 'alarma', 'fault', 'averia', 'broken', 'roto', 'outage', 'apagon', 'tall', 'problem', 'incid')) return { text: alarmsAnswer() };
+
+  if (has(q, 'where', 'which', 'what', 'donde', 'en que', 'on', 'quin', 'quins') && has(q, 'solar', 'panel', 'pv', 'placa', 'fotovolt') && has(q, 'add', 'install', 'place', 'put', 'can', 'could', 'anad', 'instal', 'afegir', 'posar', 'poder')) return { text: solarSitesAnswer() };
 
   // a specific building?
   const feats = c.s.campus!.features;
@@ -367,4 +389,39 @@ export function ask(raw: string): Answer {
   if (hit) return { text: buildingAnswer(hit.properties.osmId) };
   if (topic) return { text: topic() };
   return { text: `I'm not sure I got that. ${HELP}` };
+}
+
+/** Max share of a roof the Solar lab lets you cover (same limit as the sliders). */
+const MAX_ROOF_COVER = 0.6;
+
+/** "In which buildings can we add a solar panel?" — free roof area per building, from the OSM footprints + the current solar plan. */
+export function solarSitesAnswer(): string {
+  const c = ctx();
+  if (!c) return 'Still loading the campus data…';
+  const { s, d } = c;
+  const yieldPerKwp = Math.max(...Array.from(d.week.pv)) / PV_ASBUILT_KWP; // best hour this week, kW per kWp
+  const rows = s.campus!.features
+    .map((f) => {
+      const p = f.properties;
+      const cfg = s.solar[p.osmId] ?? { on: false, fraction: 0, tilt: 18 };
+      const cap = roofKwp(p, s.panelModel) * MAX_ROOF_COVER; // kWp at the maximum roof cover
+      const now = installedKwp(p, cfg, s.panelModel);
+      return { p, now, free: Math.max(0, cap - now), broken: s.faults.roofs.includes(p.osmId) };
+    })
+    .filter((r) => r.p.pv_fraction > 0 && r.free >= 1)
+    .sort((a, b) => b.free - a.free);
+  if (!rows.length) return 'Every usable roof is already at the maximum coverage in the Solar lab. Free space is only left on the ground (parking lots, pitches).';
+  const top = rows.slice(0, 6);
+  const total = rows.reduce((a, r) => a + r.free, 0);
+  const lines = top.map(
+    (r, i) =>
+      `${i + 1}. **${r.p.short}** — room for about **${r.free.toFixed(0)} kWp** more` +
+      (r.now < 1 ? ' (no panels yet)' : ` (${r.now.toFixed(0)} kWp installed)`) +
+      `, up to ~${(r.free * yieldPerKwp).toFixed(0)} kW at this week's sunniest hour${r.broken ? ' · array currently faulted' : ''}`,
+  );
+  return (
+    `Best roofs to add panels, by free usable area:\n${lines.join('\n')}\n\n` +
+    `In total ${rows.length} roofs have room for ~**${total.toFixed(0)} kWp** more (up to ${(MAX_ROOF_COVER * 100).toFixed(0)}% roof cover; the real plant is ${PV_ASBUILT_KWP} kWp). ` +
+    `Open a building and its **Solar** tab to try it. Keep in mind that exported surplus earns nothing in the contest, so extra panels pay most together with more battery.`
+  );
 }

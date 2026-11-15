@@ -8,7 +8,7 @@ import type { BuildingFeature } from '../types';
 import { inside, toLocal, type P2 } from './geo';
 
 export interface NetNode {
-  kind: 'sub' | 'batt' | 'bld';
+  kind: 'sub' | 'batt' | 'bld' | 'jct';
   pos: P2;
   /** index into campus.features for buildings */
   b: number;
@@ -19,6 +19,8 @@ export interface NetEdge {
   to: number;
   path: P2[];
   len: number;
+  /** buildings fed through this segment (sizes the conductor) */
+  down?: number;
 }
 
 export interface Network {

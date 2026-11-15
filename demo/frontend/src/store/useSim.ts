@@ -3,6 +3,9 @@
  * everything shown is derived from challenge.ts (exact port of sim/ + the MPC agent), so the KPIs and the
  * "score" are the contest's numbers. Heavy arrays live in `derived` (outside React state); the store only
  * carries a `version` counter so components know when to re-read them.
+ *
+ * History / forecast: with the forecast split on, hours after "now" use what was knowable at "now"
+ * (sim/forecast.ts) and the agent plans on that, exactly as it would live.
  */
 import { create } from 'zustand';
 import type {
@@ -18,16 +21,12 @@ import type {
   SolarCfg,
   WeekSummary,
 } from '../types';
+import type { Network } from '../scene/network';
 import { BATTERY_MODELS } from '../data/catalogue';
-import {
-  buildLoadShares,
-  buildingSolarKw,
-  PV_ASBUILT_KWP,
-  asBuiltCoverage,
-  DEFAULT_TILT,
-  fleetSpec,
-} from '../sim/engine';
+import { buildLoadShares, buildingSolarKw, PV_ASBUILT_KWP, asBuiltCoverage, DEFAULT_TILT, fleetSpec } from '../sim/engine';
 import { simulateWeek, type SimResult, type WeekInput } from '../sim/challenge';
+import { forecastWeek, clockHour } from '../sim/forecast';
+import { THIS_YEAR, batterySoh, pvHealth, pvYear } from '../data/assets';
 import { sunAt } from '../lib/sun';
 import { weekMsAt } from '../lib/format';
 
@@ -35,7 +34,12 @@ const HOURS = 168;
 
 /** Heavy derived data for the current week + configuration. */
 export interface Derived {
+  /** the series the app shows: measured before `nowH`, forecast after it */
   week: ReplayWeek;
+  /** the measured week (to compare the forecast with what really happened) */
+  actual: ReplayWeek;
+  /** first forecast hour, or null when the whole week is shown as history */
+  nowH: number | null;
   startMs: number;
   pvTot: Float64Array;
   shares: Float64Array;
@@ -46,9 +50,35 @@ export interface Derived {
 
 export const derived: { current: Derived | null } = { current: null };
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+export type LabelMode = 'hover' | 'top' | 'all';
+export type AlarmKind = 'equipment' | 'outage' | 'demand' | 'price' | 'co2' | 'soc' | 'data';
+
+export interface Faults {
+  /** battery unit ids that are broken (offline) */
+  batteries: string[];
+  /** building osmIds whose PV array is broken */
+  roofs: string[];
+  /** simulated grid outage window (hour index in the week) */
+  outage: { startH: number; hours: number } | null;
+}
+
+export interface AlarmCfg {
+  /** contracted / substation demand limit, kW */
+  maxDemandKw: number;
+  /** €/kWh */
+  priceHigh: number;
+  /** kg CO2/kWh */
+  co2High: number;
+  /** 0..1 */
+  socLow: number;
+  on: Record<AlarmKind, boolean>;
+}
+
 interface SimStore {
   campus: CampusData | null;
   ground: GroundData | null;
+  network: Network | null;
   replay: ReplayWeek[] | null;
   loadError: string | null;
 
@@ -70,8 +100,25 @@ interface SimStore {
   /** map mode: flat 2D (default) or extruded 3D */
   mode3d: boolean;
 
+  theme: ThemeMode;
+  labelMode: LabelMode;
+  showLegend: boolean;
+
+  /** history / forecast split */
+  forecastOn: boolean;
+  /** 'clock': "now" follows the real weekday + hour; 'manual': fixed at nowH */
+  nowMode: 'clock' | 'manual';
+  nowH: number;
+  /** draw the measured values over the forecast part of the timeline */
+  showActual: boolean;
+  /** apply equipment ageing (battery state of health, PV module degradation) to the simulation */
+  ageing: boolean;
+
+  faults: Faults;
+  alarmCfg: AlarmCfg;
+
   snap: Snapshot | null;
-  /** bumped when week / solar / battery / agent change (components re-read `derived`) */
+  /** bumped when week / solar / battery / agent / forecast / faults change (components re-read `derived`) */
   version: number;
 
   load: () => Promise<void>;
@@ -79,6 +126,8 @@ interface SimStore {
   setPlaying: (v: boolean) => void;
   setSpeed: (v: number) => void;
   setTMin: (v: number) => void;
+  /** jump to "now" and stop playback, so the view stays on the live hour */
+  goLive: () => void;
   setWeek: (i: number) => void;
   setAgent: (a: AgentKind) => void;
   setUnderground: (v: boolean) => void;
@@ -87,47 +136,129 @@ interface SimStore {
   setSunLock: (h: number | null) => void;
   setMode3d: (v: boolean) => void;
   select: (id: string | null) => void;
+  /** individual PV panel selected / hovered in the building sidebar, and which tab that sidebar shows */
+  panelFocus: string | null;
+  /** true only while the camera is centred on the selected building and slowly orbiting it (drives the X-ray wireframe) */
+  orbiting: boolean;
+  /** forecast generation: 'off' = future hidden (only past + LIVE), 'running' = being revealed hour by hour, 'ready' = shown */
+  fcStage: 'off' | 'running' | 'ready';
+  /** forecast hours revealed so far while running (fractional) */
+  fcReveal: number;
+  generateForecast: () => void;
+  clearForecast: () => void;
+  panelHover: { id: string; y: number } | null;
+  buildingTab: 'overview' | 'solar';
+  setPanelUi: (p: Partial<Pick<SimStore, 'panelFocus' | 'panelHover' | 'buildingTab'>>) => void;
   setPanelModel: (id: PanelModelId) => void;
   setSolar: (id: string, patch: Partial<SolarCfg>) => void;
   solarPreset: (preset: 'off' | 'asbuilt' | 'max') => void;
   installBattery: (modelId: string) => void;
   updateBattery: (id: string, patch: Partial<BatteryUnit>) => void;
   removeBattery: (id: string) => void;
+  setPrefs: (p: Partial<Pick<SimStore, 'theme' | 'labelMode' | 'showLegend' | 'showActual'>>) => void;
+  setForecast: (p: Partial<Pick<SimStore, 'forecastOn' | 'nowMode' | 'nowH'>>) => void;
+  setFaults: (p: Partial<Faults>) => void;
+  setAgeing: (v: boolean) => void;
+  setAlarmCfg: (p: Partial<AlarmCfg>) => void;
+  /** back to the real, as-built campus: challenge battery, real PV plant, MPC agent, no faults */
+  resetScenario: () => void;
 }
 
 let unitSeq = 0;
+/** a new (simulated) unit commissioned this year */
 const unit = (modelId: string): BatteryUnit => {
   const m = BATTERY_MODELS.find((x) => x.id === modelId)!;
-  return { id: `b${unitSeq++}`, modelId, capacity: m.capacity, power: m.power };
+  return { id: `b${unitSeq++}`, modelId, capacity: m.capacity, power: m.power, year: THIS_YEAR };
 };
+/** the real campus battery (the challenge spec); its commissioning year is an estimate */
+const asBuiltUnit = (): BatteryUnit => ({ ...unit('challenge'), year: 2023, asBuilt: true });
+
+/** user preferences that survive a reload (per browser) */
+const PREF_KEY = 'upc-energy-prefs';
+function loadPrefs(): Partial<SimStore> {
+  try {
+    return JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}') as Partial<SimStore>;
+  } catch {
+    return {};
+  }
+}
+function savePrefs(s: SimStore): void {
+  try {
+    const { theme, labelMode, showLegend, layers, mode3d, speed, showActual, alarmCfg } = s;
+    localStorage.setItem(PREF_KEY, JSON.stringify({ theme, labelMode, showLegend, layers, mode3d, speed2: speed, showActual, alarmCfg }));
+  } catch {
+    /* private mode: preferences just are not remembered */
+  }
+}
+
+const DEFAULT_LAYERS: Record<LayerId, boolean> = {
+  heat: true,
+  glow: false, // off by default: buildings carry the heat colour themselves
+  sun: true,
+  shadows: true,
+  weather: true,
+  cables: true,
+  assets: true,
+  solar: true,
+  trees: true,
+  people: false,
+  labels: true,
+};
+
+const prefs = loadPrefs();
 
 export const useSim = create<SimStore>((set, get) => ({
   campus: null,
   ground: null,
+  network: null,
   replay: null,
   loadError: null,
   weekIdx: 17, // a spring week with a nice price/CO2 spread
-  tMin: 24 * 60 + 13 * 60, // day 2, 13:00: a busy weekday hour
+  tMin: 24 * 60 + 13 * 60,
   playing: false,
-  speed: 60,
+  speed: (prefs as { speed2?: number }).speed2 ?? 30, // 0.5 simulated hours per second
   panelModel: 'mono',
   solar: {},
-  batteries: [unit('challenge')],
+  batteries: [asBuiltUnit()],
   agent: 'mpc',
   selection: null,
+  panelFocus: null,
+  orbiting: false,
+  fcStage: 'off',
+  fcReveal: 0,
+  panelHover: null,
+  buildingTab: 'overview',
   underground: false,
-  layers: { heat: false, people: false, weather: true, solar: true, cables: true, trees: true, shadows: true, labels: true },
+  layers: { ...DEFAULT_LAYERS, ...(prefs.layers ?? {}) },
   sunLock: null,
-  mode3d: false,
+  mode3d: prefs.mode3d ?? false,
+  theme: prefs.theme ?? 'light',
+  labelMode: prefs.labelMode ?? 'hover',
+  showLegend: prefs.showLegend ?? false,
+  forecastOn: true,
+  nowMode: 'clock',
+  nowH: 84,
+  showActual: prefs.showActual ?? false,
+  ageing: false,
+  faults: { batteries: [], roofs: [], outage: null },
+  alarmCfg: {
+    maxDemandKw: 1600,
+    priceHigh: 0.25,
+    co2High: 0.2,
+    socLow: 0.1,
+    on: { equipment: true, outage: true, demand: true, price: true, co2: true, soc: true, data: true },
+    ...(prefs.alarmCfg ?? {}),
+  },
   snap: null,
   version: 0,
 
   load: async () => {
     try {
-      const [c, g, r] = await Promise.all([
+      const [c, g, r, n] = await Promise.all([
         fetch('/data/campus.json').then((x) => x.json()),
         fetch('/data/ground.json').then((x) => x.json()),
         fetch('/data/replay.json').then((x) => x.json()),
+        fetch('/data/network.json').then((x) => x.json()),
       ]);
       const campus = c as CampusData;
       const cov = asBuiltCoverage(campus.features.map((f) => f.properties));
@@ -136,7 +267,10 @@ export const useSim = create<SimStore>((set, get) => ({
         const has = f.properties.pv_fraction > 0;
         solar[f.properties.osmId] = { on: has, fraction: has ? cov : 0, tilt: DEFAULT_TILT };
       }
-      set({ campus, ground: g as GroundData, replay: (r as { weeks: ReplayWeek[] }).weeks, solar });
+      const replay = (r as { weeks: ReplayWeek[] }).weeks;
+      const nowH = clockHour(replay[get().weekIdx]);
+      // open at "now", in the history part
+      set({ campus, ground: g as GroundData, network: n as Network, replay, solar, nowH, tMin: nowH * 60 });
       recompute(set, get);
     } catch (e) {
       set({ loadError: String(e) });
@@ -147,16 +281,63 @@ export const useSim = create<SimStore>((set, get) => ({
     const s = get();
     if (!s.campus || !derived.current) return;
     if (!s.playing) return;
+    const maxMin = visibleLimitH(s) * 60 - 1;
     let t = s.tMin + dtSec * s.speed;
+    if (t >= maxMin) {
+      // the future is not generated: stop at LIVE instead of wrapping around the week
+      if (maxMin < HOURS * 60 - 1) {
+        set({ tMin: maxMin, playing: false, snap: snapshotAt(get(), maxMin) });
+        return;
+      }
+    }
     if (t >= HOURS * 60) t -= HOURS * 60;
     set({ tMin: t, snap: snapshotAt(get(), t) });
   },
 
   setPlaying: (v) => set({ playing: v }),
-  setSpeed: (v) => set({ speed: v }),
-  setTMin: (t) => set({ tMin: t, snap: derived.current ? snapshotAt(get(), t) : null }),
+  setSpeed: (v) => {
+    set({ speed: v });
+    savePrefs(get());
+  },
+  setTMin: (t0) => {
+    const t = Math.min(t0, visibleLimitH(get()) * 60 - 1);
+    set({ tMin: t, snap: derived.current ? snapshotAt(get(), t) : null });
+  },
+  goLive: () => {
+    const t = get().nowH * 60;
+    set({ playing: false, tMin: t, snap: derived.current ? snapshotAt(get(), t) : null });
+  },
+  generateForecast: () => {
+    const d = derived.current;
+    const s = get();
+    if (!d || d.nowH == null || s.fcStage === 'running') return;
+    const total = Math.max(1, d.week.load.length - d.nowH - 1);
+    stopForecastTimer();
+    set({ fcStage: 'running', fcReveal: 0 });
+    const t0 = performance.now();
+    // ~9 s of "generation"; eases out so the first hours appear quickly and the far horizon takes longer
+    fcTimer = window.setInterval(() => {
+      const p = Math.min(1, (performance.now() - t0) / FC_DURATION_MS);
+      const e = 1 - Math.pow(1 - p, 1.6);
+      if (p >= 1) {
+        stopForecastTimer();
+        set({ fcStage: 'ready', fcReveal: total });
+      } else set({ fcReveal: e * total });
+    }, 60);
+  },
+  clearForecast: () => {
+    stopForecastTimer();
+    const s = get();
+    const d = derived.current;
+    const lim = d?.nowH != null ? d.nowH * 60 : null;
+    set({ fcStage: 'off', fcReveal: 0, ...(lim != null && s.tMin > lim ? { tMin: lim, playing: false } : {}) });
+    if (lim != null && s.tMin > lim) set({ snap: derived.current ? snapshotAt(get(), lim) : null });
+  },
   setWeek: (i) => {
-    set({ weekIdx: i }); // keep the same position in the week
+    const s = get();
+    stopForecastTimer();
+    set({ fcStage: 'off', fcReveal: 0 });
+    set({ weekIdx: i, ...(s.nowMode === 'clock' && s.replay ? { nowH: clockHour(s.replay[i]) } : {}) });
     recompute(set, get);
   },
   setAgent: (a) => {
@@ -164,14 +345,29 @@ export const useSim = create<SimStore>((set, get) => ({
     recompute(set, get);
   },
   setUnderground: (v) => set({ underground: v }),
-  toggleLayer: (id) => set((s) => ({ layers: { ...s.layers, [id]: !s.layers[id] } })),
-  setLayers: (patch) => set((s) => ({ layers: { ...s.layers, ...patch } })),
+  toggleLayer: (id) => {
+    set((s) => ({ layers: { ...s.layers, [id]: !s.layers[id] } }));
+    savePrefs(get());
+  },
+  setLayers: (patch) => {
+    set((s) => ({ layers: { ...s.layers, ...patch } }));
+    savePrefs(get());
+  },
   setSunLock: (h) => {
     set({ sunLock: h });
     set({ snap: derived.current ? snapshotAt(get(), get().tMin) : null });
   },
-  setMode3d: (v) => set({ mode3d: v }),
-  select: (id) => set({ selection: id }),
+  setMode3d: (v) => {
+    set({ mode3d: v });
+    savePrefs(get());
+  },
+  select: (id) => {
+    // a single PV panel: open its building on the Solar tab with that panel selected
+    const m = id?.match(/^panel:(.+):(\d+)$/);
+    if (m) set({ selection: m[1], panelFocus: id, buildingTab: 'solar' });
+    else set((s) => ({ selection: id, panelFocus: null, panelHover: null, buildingTab: id === s.selection ? s.buildingTab : 'overview' }));
+  },
+  setPanelUi: (p) => set(p),
   setPanelModel: (id) => {
     set({ panelModel: id });
     recompute(set, get);
@@ -204,10 +400,70 @@ export const useSim = create<SimStore>((set, get) => ({
     recompute(set, get);
   },
   removeBattery: (id) => {
-    set((s) => ({ batteries: s.batteries.filter((b) => b.id !== id) }));
+    set((s) => ({ batteries: s.batteries.filter((b) => b.id !== id), faults: { ...s.faults, batteries: s.faults.batteries.filter((x) => x !== id) } }));
     recompute(set, get);
   },
+  setPrefs: (p) => {
+    set(p);
+    savePrefs(get());
+  },
+  setForecast: (p) => {
+    const s = get();
+    const next: Partial<SimStore> = { ...p, fcStage: 'off', fcReveal: 0 };
+    stopForecastTimer();
+    if (p.nowMode === 'clock' && s.replay) next.nowH = clockHour(s.replay[s.weekIdx]);
+    set(next);
+    recompute(set, get);
+    // a hidden future cannot stay selected: pull the playhead back to LIVE
+    const lim = visibleLimitH(get()) * 60 - 1;
+    if (get().tMin > lim) get().setTMin(lim);
+  },
+  setAgeing: (v) => {
+    set({ ageing: v });
+    recompute(set, get);
+  },
+  setFaults: (p) => {
+    set((s) => ({ faults: { ...s.faults, ...p } }));
+    recompute(set, get);
+  },
+  resetScenario: () => {
+    const campus = get().campus;
+    const solar: Record<string, SolarCfg> = {};
+    if (campus) {
+      const cov = asBuiltCoverage(campus.features.map((f) => f.properties));
+      for (const f of campus.features) {
+        const has = f.properties.pv_fraction > 0;
+        solar[f.properties.osmId] = { on: has, fraction: has ? cov : 0, tilt: DEFAULT_TILT };
+      }
+    }
+    set({ batteries: [asBuiltUnit()], panelModel: 'mono', agent: 'mpc', ageing: false, solar, faults: { batteries: [], roofs: [], outage: null } });
+    recompute(set, get);
+  },
+  setAlarmCfg: (p) => {
+    set((s) => ({ alarmCfg: { ...s.alarmCfg, ...p, on: { ...s.alarmCfg.on, ...(p.on ?? {}) } } }));
+    set({ version: get().version + 1 });
+    savePrefs(get());
+  },
 }));
+
+const FC_DURATION_MS = 9000;
+let fcTimer = 0;
+function stopForecastTimer(): void {
+  if (fcTimer) window.clearInterval(fcTimer);
+  fcTimer = 0;
+}
+
+/**
+ * Hours of the week that may be shown (exclusive upper bound): everything up to and including LIVE, plus the forecast
+ * hours generated so far. Without a forecast split (or before it is generated) the future is hidden.
+ */
+export function visibleLimitH(s: Pick<SimStore, 'fcStage' | 'fcReveal'>): number {
+  const d = derived.current;
+  const n = d?.week.load.length ?? 168;
+  if (!d || d.nowH == null) return n;
+  if (s.fcStage === 'ready') return n;
+  return Math.min(n, d.nowH + 1 + (s.fcStage === 'running' ? Math.floor(s.fcReveal) : 0));
+}
 
 type Setter = (p: Partial<SimStore> | ((s: SimStore) => Partial<SimStore>)) => void;
 
@@ -225,17 +481,28 @@ function summarize(r: SimResult): WeekSummary {
   };
 }
 
+/** Battery units that are not marked broken. */
+export function workingBatteries(s: Pick<SimStore, 'batteries' | 'faults'>): BatteryUnit[] {
+  return s.batteries.filter((b) => !s.faults.batteries.includes(b.id));
+}
+
+const roofCfg = (s: SimStore, id: string): SolarCfg => {
+  const c = s.solar[id] ?? { on: false, fraction: 0, tilt: DEFAULT_TILT };
+  return s.faults.roofs.includes(id) ? { ...c, on: false } : c;
+};
+
 /** Re-run the three simulations (agent, template, no battery) for the current week + configuration. */
 function recompute(set: Setter, get: () => SimStore): void {
   const s = get();
   if (!s.campus || !s.replay) return;
-  const week = s.replay[s.weekIdx];
-  const startMs = Date.UTC(
-    +week.start.slice(0, 4),
-    +week.start.slice(5, 7) - 1,
-    +week.start.slice(8, 10),
-    +week.start.slice(11, 13),
-  );
+  const actual = s.replay[s.weekIdx];
+  const nowH = s.forecastOn ? Math.min(actual.load.length, Math.max(0, s.nowH)) : null;
+  let week = actual;
+  if (nowH != null && nowH < actual.load.length) {
+    const fc = forecastWeek(s.replay, s.weekIdx, nowH);
+    week = { ...actual, load: Array.from(fc.load), pv: Array.from(fc.pv), price: Array.from(fc.price), co2: Array.from(fc.co2) };
+  }
+  const startMs = Date.UTC(+week.start.slice(0, 4), +week.start.slice(5, 7) - 1, +week.start.slice(8, 10), +week.start.slice(11, 13));
   const props = s.campus.features.map((f) => f.properties);
   const key = `${s.weekIdx}`;
   let shares = shareCache.get(key);
@@ -247,17 +514,19 @@ function recompute(set: Setter, get: () => SimStore): void {
   for (let h = 0; h < HOURS; h++) {
     const yieldKw = week.pv[h] / PV_ASBUILT_KWP;
     let t = 0;
-    for (const p of props) t += buildingSolarKw(p, s.solar[p.osmId] ?? { on: false, fraction: 0, tilt: DEFAULT_TILT }, s.panelModel, yieldKw);
+    for (const p of props) t += buildingSolarKw(p, roofCfg(s, p.osmId), s.panelModel, yieldKw) * pvFactor(s, p);
     pvTot[h] = t;
   }
   const input: WeekInput = { start: week.start, ms: week.ms, load: week.load, pv: pvTot, price: week.price, co2: week.co2 };
   const none = simulateWeek(input, { capacityKwh: 1, powerKw: 0, eta: 1 }, 'none');
-  const spec = fleetSpec(s.batteries);
+  const spec = fleetSpec(effectiveBatteries(s));
   const mpc = spec ? simulateWeek(input, spec, 'mpc') : null;
   const template = spec ? simulateWeek(input, spec, 'template') : null;
   const chosen = (s.agent === 'mpc' ? mpc : s.agent === 'template' ? template : none) ?? none;
   derived.current = {
     week,
+    actual,
+    nowH,
     startMs,
     pvTot,
     shares,
@@ -283,18 +552,17 @@ function snapshotAt(s: SimStore, tMin: number): Snapshot | null {
   const loadKw = d.week.load[h];
   const solarKw = d.pvTot[h];
   const battKw = r.sp[h];
-  const soc = r === d.sims.none ? 0.5 * (fleetSpec(s.batteries)?.capacityKwh ?? 0) : r.socStart[h] + (r.socEnd[h] - r.socStart[h]) * f;
-  const spec = fleetSpec(s.batteries);
+  const spec = fleetSpec(effectiveBatteries(s));
   const cap = spec?.capacityKwh ?? 0;
+  const soc = r === d.sims.none ? 0.5 * cap : r.socStart[h] + (r.socEnd[h] - r.socStart[h]) * f;
 
   const perB: Snapshot['perB'] = {};
-  const props = campus.features;
   const yieldKw = d.week.pv[h] / PV_ASBUILT_KWP;
-  props.forEach((feat: BuildingFeature, i) => {
+  campus.features.forEach((feat: BuildingFeature, i) => {
     const p = feat.properties;
     perB[p.osmId] = {
       loadKw: d.shares[i * HOURS + h] * loadKw,
-      solarKw: buildingSolarKw(p, s.solar[p.osmId] ?? { on: false, fraction: 0, tilt: DEFAULT_TILT }, s.panelModel, yieldKw),
+      solarKw: buildingSolarKw(p, roofCfg(s, p.osmId), s.panelModel, yieldKw) * pvFactor(s, p),
     };
   });
 
@@ -308,13 +576,14 @@ function snapshotAt(s: SimStore, tMin: number): Snapshot | null {
   const sunMs = s.sunLock == null ? clockMs : Math.floor(clockMs / 86_400_000) * 86_400_000 + s.sunLock * 3_600_000;
   const sun = sunAt(sunMs);
   const trueSun = sunAt(clockMs);
-  const irr = d.week.irr[h] + ((d.week.irr[Math.min(HOURS - 1, h + 1)] - d.week.irr[h]) * f);
+  const irr = d.week.irr[h] + (d.week.irr[Math.min(HOURS - 1, h + 1)] - d.week.irr[h]) * f;
   const clear = 1050 * Math.pow(Math.max(0, Math.sin((trueSun.elev * Math.PI) / 180)), 1.15);
   const cloud = trueSun.elev > 4 ? Math.min(1, Math.max(0, 1 - irr / Math.max(clear, 1))) : 0.25;
 
   return {
     tMin,
     hour: h,
+    forecast: d.nowH != null && h >= d.nowH,
     loadKw,
     solarKw,
     gridKw: r.grid[h],
@@ -340,4 +609,15 @@ function snapshotAt(s: SimStore, tMin: number): Snapshot | null {
     irr,
     cloud,
   };
+}
+
+/** working units, with their capacity reduced to the state of health when ageing is on */
+export function effectiveBatteries(s: Pick<SimStore, 'batteries' | 'faults' | 'ageing'>): BatteryUnit[] {
+  const w = workingBatteries(s);
+  return s.ageing ? w.map((u) => ({ ...u, capacity: u.capacity * batterySoh(u.year ?? THIS_YEAR) })) : w;
+}
+
+/** PV output factor from module ageing (1 when ageing is off) */
+function pvFactor(s: Pick<SimStore, 'ageing'>, p: BuildingFeature['properties']): number {
+  return s.ageing ? pvHealth(pvYear(p)) : 1;
 }

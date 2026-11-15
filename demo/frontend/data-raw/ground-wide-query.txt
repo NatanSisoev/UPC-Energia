@@ -1,0 +1,10 @@
+[out:json][timeout:180];
+(
+  way["highway"](41.3707,2.0902,41.4038,2.1393);
+  way["leisure"~"park|garden|pitch|playground"](41.3707,2.0902,41.4038,2.1393);
+  way["landuse"~"grass|forest|recreation_ground|meadow"](41.3707,2.0902,41.4038,2.1393);
+  way["natural"~"wood|scrub|grassland|water"](41.3707,2.0902,41.4038,2.1393);
+  way["amenity"="parking"](41.3707,2.0902,41.4038,2.1393);
+  way["building"](41.3707,2.0902,41.4038,2.1393);
+);
+out geom;
