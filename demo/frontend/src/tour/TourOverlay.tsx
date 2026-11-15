@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw, Undo2 } from 'lucide-react';
 import Insights from '../components/Insights';
 import { useSim } from '../store/useSim';
 import { setNavigator } from './actions';
@@ -13,7 +13,7 @@ const txt = (t: Text, f: TF) => (typeof t === 'function' ? t(f) : t);
 /** Mounted once in the router root (so it survives the /catalogue page). Keyboard, caption card, spotlight, covers. */
 export default function TourOverlay() {
   const navigate = useNavigate();
-  const { active, idx, sub } = useTour();
+  const { active, idx, sub, diverged } = useTour();
   const [, force] = useState(0);
   const [tlH, setTlH] = useState(0);
   // the pill can be dragged anywhere; the offset from its default corner survives beat changes and is clamped to the window
@@ -22,6 +22,28 @@ export default function TourOverlay() {
   const pill = useRef<HTMLDivElement>(null);
   useSim((s) => s.version);
   useSim((s) => s.snap?.hour);
+
+  // the tour runs in the background from the first frame (jury walks up to a live app); it starts once the data is loaded
+  const ready = useSim((s) => s.snap !== null);
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (ready && !autoStarted.current) {
+      autoStarted.current = true;
+      useTour.getState().start();
+    }
+  }, [ready]);
+
+  // any pointer press outside the tour pill = someone is exploring: hide the covers, keep the pill, offer "back to tour"
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const t = useTour.getState();
+      if (!t.active || t.busy) return;
+      if ((e.target as HTMLElement | null)?.closest('[data-tour-pill]')) return;
+      t.diverge();
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    return () => window.removeEventListener('pointerdown', onDown, true);
+  }, []);
 
   useEffect(() => setNavigator((to) => void navigate(to)), [navigate]);
 
@@ -73,8 +95,8 @@ export default function TourOverlay() {
   const step = STEPS[idx];
   const clicks = step.clicks ?? [];
   const f = tourFacts();
-  const cover = step.cover?.(sub) ?? null;
-  const spot = sub === 0 ? step.spot : (clicks[sub - 1].spot ?? step.spot);
+  const cover = diverged ? null : (step.cover?.(sub) ?? null);
+  const spot = diverged ? undefined : sub === 0 ? step.spot : (clicks[sub - 1].spot ?? step.spot);
   const nextClick = clicks[sub];
   const atEnd = !nextClick && idx === STEPS.length - 1;
 
@@ -89,7 +111,7 @@ export default function TourOverlay() {
       {cover === 'facts' && f && <FactsCover f={f} />}
       {spot && !cover && <Spot selector={spot} key={`${idx}-${sub}`} />}
 
-      <div ref={pill} className="pointer-events-none fixed left-4 z-[70] w-[min(420px,calc(100vw-32px))]" style={{ bottom: Math.max(16, tlH + 12), transform: `translate(${off.x}px, ${off.y}px)` }}>
+      <div ref={pill} data-tour-pill className="pointer-events-none fixed left-4 z-[70] w-[min(420px,calc(100vw-32px))]" style={{ bottom: Math.max(16, tlH + 12), transform: `translate(${off.x}px, ${off.y}px)` }}>
         <div key={`${idx}-${sub}`} className="tour-card pointer-events-auto flex cursor-grab touch-none select-none items-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--surface)] py-1.5 pl-3.5 pr-1.5 active:cursor-grabbing" onPointerDown={(e) => { if ((e.target as HTMLElement).closest('button')) return; drag.current = { px: e.clientX, py: e.clientY, ox: off.x, oy: off.y }; e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={(e) => { const d = drag.current; const r = pill.current?.getBoundingClientRect(); if (!d || !r) return; const nx = d.ox + e.clientX - d.px; const ny = d.oy + e.clientY - d.py; const dx = nx - off.x; const dy = ny - off.y; const x = Math.min(window.innerWidth - 40, Math.max(40 - r.width, r.left + dx)) - (r.left - off.x); const y = Math.min(window.innerHeight - 20, Math.max(0, r.top + dy)) - (r.top - off.y); setOff({ x, y }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} style={{ boxShadow: 'var(--shadow-lg)' }} role="dialog" aria-label="Guided tour">
           <span className="tnum shrink-0 text-[11px] font-semibold text-[var(--accent)]" aria-label={`Beat ${idx + 1} of ${STEPS.length}`}>
             {idx + 1}/{STEPS.length}
@@ -97,6 +119,14 @@ export default function TourOverlay() {
           <span className="min-w-0 flex-1 truncate text-[13px] font-semibold" title={f ? txt(step.title, f) : step.short}>
             {f ? txt(step.title, f) : step.short}
           </span>
+          {diverged && (
+            <button type="button" className="btn-primary !h-7 shrink-0 !gap-1 !px-2.5 text-[12px]" onClick={() => useTour.getState().resume()} aria-label="Back to the tour" title="Reset the screen and go back to the tour where it was">
+              <Undo2 size={13} /> Tour
+            </button>
+          )}
+          <button type="button" className="icon-btn !h-7 !w-7 shrink-0" onClick={() => useTour.getState().restart()} aria-label="Restart tour from the beginning" title="Reset everything and restart from beat 1">
+            <RotateCcw size={14} />
+          </button>
           <button type="button" className="icon-btn !h-7 !w-7 shrink-0" onClick={() => useTour.getState().prev()} disabled={idx === 0 && sub === 0} aria-label="Back">
             <ChevronLeft size={15} />
           </button>
