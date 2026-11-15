@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, FlaskConical, LocateFixed, RotateCcw } from 'lucide-react';
-import { useSim } from '../store/useSim';
+import { useSim, derived } from '../store/useSim';
+import { modelOf, installedKwp, asBuiltCoverage, DEFAULT_TILT } from '../sim/engine';
+import { PANEL_MODELS } from '../data/catalogue';
+import { fmtEur } from '../lib/format';
+import { paybackYearsOf, WEEKS_PER_YEAR, LIFETIME_YEARS } from '../lib/payback';
 import { TIME_LABEL, useViewMode, type Change } from '../lib/mode';
 
 const KIND: Record<Change['kind'], { label: string; cls: string }> = {
@@ -9,6 +13,95 @@ const KIND: Record<Change['kind'], { label: string; cls: string }> = {
   fault: { label: 'fault', cls: 'badge-crit' },
   setting: { label: 'setting', cls: 'badge-hist' },
 };
+
+const GOOD = 'var(--ok)';
+const BAD = 'var(--crit, #ef4444)';
+
+/** Consequences of the simulated changes vs the real campus over the selected week (reuses the app's own simulation). */
+function useConsequences() {
+  useSim((s) => s.version);
+  const batteries = useSim((s) => s.batteries);
+  const solar = useSim((s) => s.solar);
+  const panelModel = useSim((s) => s.panelModel);
+  const campus = useSim((s) => s.campus);
+  const t = derived.current?.totals;
+  if (!t) return null;
+  // investment: catalogue prices of added batteries + extra solar kWp (indicative, from data/catalogue.ts)
+  let invest = 0;
+  let investBat = 0;
+  for (const b of batteries.filter((x) => !x.asBuilt)) investBat += modelOf(b).priceEur;
+  invest = investBat;
+  if (campus) {
+    const cov = asBuiltCoverage(campus.features.map((f) => f.properties));
+    const eurKw = PANEL_MODELS.find((m) => m.id === panelModel)?.eurPerKw ?? 0;
+    for (const f of campus.features) {
+      const p = f.properties;
+      const c = solar[p.osmId];
+      if (!c) continue;
+      const real = installedKwp(p, { on: p.pv_fraction > 0, fraction: p.pv_fraction > 0 ? cov : 0, tilt: DEFAULT_TILT }, 'mono');
+      const extra = installedKwp(p, c, panelModel) - real;
+      if (extra > 0) invest += extra * eurKw;
+    }
+  }
+  const dCo2 = t.chosen.co2Kg - t.real.co2Kg;
+  const dCost = t.chosen.costEur - t.real.costEur;
+  return {
+    dCo2,
+    dCost,
+    pCo2: t.real.co2Kg > 0 ? (dCo2 / t.real.co2Kg) * 100 : 0,
+    pCost: t.real.costEur > 0 ? (dCost / t.real.costEur) * 100 : 0,
+    invest,
+    // cost-weighted service life of what was added (batteries vs panels, lifetimes from lib/payback)
+    life: invest > 0 ? (investBat * LIFETIME_YEARS.battery + (invest - investBat) * LIFETIME_YEARS.solar) / invest : 0,
+    payback: paybackYearsOf(invest, -dCost * WEEKS_PER_YEAR),
+  };
+}
+
+const sgn = (v: number) => (Math.abs(v) < 0.05 ? '' : v < 0 ? '−' : '+');
+const tone = (v: number) => (Math.abs(v) < 0.05 ? 'var(--muted)' : v < 0 ? GOOD : BAD);
+
+/** The two headline numbers of a simulation: big, signed, coloured. */
+function Hero({ c }: { c: NonNullable<ReturnType<typeof useConsequences>> }) {
+  const cards = [
+    { k: 'CO₂ · grid', v: c.dCo2, p: c.pCo2, text: `${Math.abs(c.dCo2) >= 1000 ? (Math.abs(c.dCo2) / 1000).toFixed(2) + ' t' : Math.abs(Math.round(c.dCo2)).toLocaleString('en') + ' kg'}` },
+    { k: 'Budget · energy cost', v: c.dCost, p: c.pCost, text: fmtEur(Math.abs(c.dCost)) },
+  ];
+  return (
+    <div className="px-1 pb-2 pt-1">
+      <div className="eyebrow px-1 pb-1.5">Consequences vs the real campus · selected week</div>
+      <div className="grid grid-cols-2 gap-2">
+        {cards.map((x) => (
+          <div key={x.k} className="rounded-lg border p-2.5" style={{ borderColor: tone(x.v), background: `color-mix(in srgb, ${tone(x.v)} 10%, transparent)` }}>
+            <div className="eyebrow !text-[10px]">{x.k}</div>
+            <div className="tnum mt-0.5 text-[22px] font-bold leading-tight" style={{ color: tone(x.v) }}>
+              {sgn(x.v)}
+              {x.text}
+            </div>
+            <div className="tnum text-[13px] font-semibold" style={{ color: tone(x.v) }}>
+              {sgn(x.v)}
+              {Math.abs(x.p).toFixed(1)}%
+            </div>
+          </div>
+        ))}
+      </div>
+      {c.invest > 0 && (
+        <div className="mt-1.5 px-1 text-[12.5px]">
+          <div className="flex items-baseline justify-between">
+            <span className="muted">Investment (catalogue prices)</span>
+            <span className="tnum font-semibold">{fmtEur(c.invest)}</span>
+          </div>
+          <div className="flex items-baseline justify-between" title={`Typical life ~${c.life.toFixed(0)} yr (cost-weighted)`}>
+            <span className="muted">Payback</span>
+            <span className="tnum font-semibold" style={{ color: Number.isFinite(c.payback) && c.payback <= c.life ? GOOD : BAD }}>
+              {Number.isFinite(c.payback) ? `~ ${c.payback.toFixed(1)} yr` : 'does not pay back'}
+            </span>
+          </div>
+          <div className="text-[10.5px] faint">from the selected week's saving × 52 · typical life ~{c.life.toFixed(0)} yr</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Always-visible status: is the screen showing LIVE / HISTORY / FORECAST data, and is it the real campus or a
@@ -31,6 +124,7 @@ export default function ModeIndicator() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
 
+  const cons = useConsequences();
   const counts = scenario.reduce<Record<string, number>>((a, c) => ({ ...a, [c.kind]: (a[c.kind] ?? 0) + 1 }), {});
 
   return (
@@ -75,10 +169,21 @@ export default function ModeIndicator() {
                 .filter(Boolean)
                 .join(' · ')}
             </span>
+            {cons && (
+              <>
+                <span className="tnum text-[12px] font-bold" style={{ color: tone(cons.dCo2) }} title="CO₂ vs the real campus, selected week">
+                  CO₂ {sgn(cons.dCo2)}{Math.abs(cons.pCo2).toFixed(1)}%
+                </span>
+                <span className="tnum text-[12px] font-bold" style={{ color: tone(cons.dCost) }} title="Energy cost vs the real campus, selected week">
+                  € {sgn(cons.dCost)}{Math.abs(cons.pCost).toFixed(1)}%
+                </span>
+              </>
+            )}
             <ChevronDown size={13} className="muted" />
           </button>
           {open && (
-            <div className="card fade-in absolute left-0 top-[calc(100%+6px)] z-40 w-[360px] p-2" style={{ boxShadow: 'var(--shadow-lg)' }}>
+            <div className="card fade-in absolute left-0 top-[calc(100%+6px)] z-40 w-[380px] p-2" style={{ boxShadow: 'var(--shadow-lg)' }}>
+              {cons && <Hero c={cons} />}
               <div className="eyebrow px-2 pb-1.5 pt-1">Differences from the real campus · {scenario.length}</div>
               <div className="max-h-[320px] overflow-y-auto">
                 {scenario.map((c, i) => (
